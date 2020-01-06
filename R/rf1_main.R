@@ -1188,6 +1188,7 @@ spatial.temporal.barplots = function(temporal.accuracy, spatial.accuracy, spatia
 #'
 #' @return Mosquito data compiled to give estimated mosquito infection rates by spatial unit and temporal resolution
 #'
+#' @export calculate.MLE.v2
 calculate.MLE.v2 = function(md, temporal.resolution = "annual"){
   
   # Check that expected column names are present, if not, give an informative error
