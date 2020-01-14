@@ -499,7 +499,7 @@ convert.env.data = function(weather.data, all.counties, season.breaks){
   # This looks like a job for dplyr; https://datacarpentry.org/dc_zurich/R-ecology/04-dplyr
   #**# This is hard-coded to specific variables. Can dplyr take a more general input?
   env.data.pre = weather.data %>%
-    group_by(county_year, wbreaks) %>%
+    dplyr::group_by(county_year, wbreaks) %>%
     dplyr::summarize(TMINC = mean(tminc), TMEANC = mean(tmeanc), TMAXC = mean(tmaxc), PR = mean(pr),
                      RMEAN = mean(rmean), VPD = mean(vpd))
   
