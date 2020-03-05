@@ -23,6 +23,8 @@ NULL
 #' prevalence in pooled samples using maximum likelihood methods and
 #' open source software. Journal of Aquatic Animal Health 17: 386 - 391
 #'
+#' @noRd
+#'
 #' @name llprevr
 llprevr <- function(p, yes = c(0), no = c(0)){
 

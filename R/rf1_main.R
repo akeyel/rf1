@@ -5,10 +5,13 @@
 #' @importFrom caret RMSE
 #' @importFrom psych pairs.panels
 #' @importFrom randomForest randomForest
+#' @importFrom quantregForest quantregForest
 #' @importFrom grDevices dev.off tiff
 #' @importFrom graphics barplot par plot segments text
-#' @importFrom stats aggregate as.formula cor median na.exclude optimize predict qchisq runif uniroot
+#' @importFrom stats aggregate as.formula cor median na.exclude optimize predict qchisq runif uniroot rnorm
 #' @importFrom utils read.csv write.table
+#' @importFrom usethis use_data
+#' @importFrom dplyr '%>%'
 NULL
 
 #' Run the rf1 model
@@ -31,6 +34,9 @@ NULL
 #'    Williams, C and C. Moffitt 2005. Estimation of pathogen prevalence in pooled samples
 #'    using maximum likelihood methods and open source software. Journal of Aquatic Animal Health 17: 386-391
 #'
+#' @param forecast.targets A vector containing options of what to forecast.
+#' 'annual.human.cases' generates human case predictions, while 'seasonal.mosquito.MLE'
+#' provides options for mosquito predictions
 #' @param human.data Data on human cases of the disease. Must be formatted with
 #'   two columns: district and date. The district column contains the spatial
 #'   unit (typically county), while the date corresponds to the date of the
@@ -40,8 +46,6 @@ NULL
 #'   col_date: the date the mosquitoes were tested, wnv_result: whether or not
 #'   the pool was positive, pool_size: the number of mosquitoes tested in the
 #'   pool. A fifth column species is optional but is not used by the code
-#' @param districtshapefile The shapefile with polygons representing the
-#'   districts. #**# Is this used by RF1?
 #' @param weather.data Data on weather variables to be included in the analysis.
 #'   See the read.weather.data function for details about data format. The
 #'   read.weather.data function from ArboMAP is a useful way to process one or
@@ -54,16 +58,29 @@ NULL
 #'   MORE DETAILS
 #' @param results.path The base path in which to place the modeling results.
 #'   Some models will create sub-folders for model specific results
+#' @param id.string An id to use for labeling the aggregations across all districts
 #' @param break.type The temporal frequency to use for the data. The default is
 #'   'seasonal' which breaks the environmental data into January, February,
 #'   March; April, May, June; July, August, September; October, November,
 #'   December. Other options may be supported in the future.
 #' @param response.type Whether data should be treated as continuous (mosquito
 #'   rates, number of cases) or binary (0 or 1).
+#' @param quantile.model Whether (1) or not (0) to use a quantile random forest
+#' for the final model output. All other calculations and model fitting use the
+#' standard randomForest package.
+#' @param n.draws The number of random realizations to draw for the RF1.distributions object
+#' @param bins Bin break points for the CDC forecast challenge
+#' @param use.testing.objects An indicator. If TRUE, the analysis will not run,
+#' but will load previously saved outputs in order to expedite testing the formatting
+#' of the code outputs.
+#'
+#' @return Four outputs are generated: The Results dataframe, the Distributions dataframe, the Bins dataframe, and the model object results
 #'
 #' @export rf1
-rf1 = function(human.data, mosq.data, districtshapefile, weather.data,
-               weekinquestion, rf1.inputs, results.path, break.type = "seasonal", response.type = "continuous"){
+rf1 = function(forecast.targets, human.data, mosq.data, weather.data,
+               weekinquestion, rf1.inputs, results.path, id.string, break.type = "seasonal", response.type = "continuous",
+               quantile.model = 1, n.draws = 1000, bins = c(0,seq(1,51,1),101,151,201,1000),
+               use.testing.objects = FALSE){
   
   out = FormatDataForRF1(human.data, mosq.data, weekinquestion, weather.data, rf1.inputs, results.path, break.type)
   my.data = out[[1]]
@@ -80,14 +97,20 @@ rf1 = function(human.data, mosq.data, districtshapefile, weather.data,
   # For second question - does seem like a lot of work to get at a number that tells us what? In ArboMAP it is used to estimate human cases, but we do that directly.
   #**# So for now, maybe the mosquito results aren't relevant? Or phrased better - are not relevant to the specific comparison question being asked.
   annual.positive.district.weeks = NA
-  
+
+  # Create output objects
+  RF1.results = data.frame(forecast.target = NA, district = NA, value = NA)
+  RF1.distributions = data.frame(forecast.target = NA, district = NA)
+  for (i in 1:n.draws){
+    new.col = sprintf("DRAW%s", i)
+    RF1.distributions[[new.col]] = NA}
+  RF1.bins = data.frame(location = NA, target = 'Total WNV neuroinvasive disease cases',
+                        type = 'bin', unit = 'cases', bin_start_inclusive = NA, bin_end_notinclusive = NA )
+    
   #**# WHAT AM I DOING WITH INFECTION RATE? PREVIOUSLY I ESTIMATED IT OVER THE ENTIRE YEAR, BUT HERE, THE DATA MIGHT BE MISSING OR FOR PART OF THE YEAR.
   #**# I could use the forecast mosquito infection rate? Would that be more useful than just leaving it out?
   # NOTE: the mosquito-only analysis is not directly connected to the prediction of human cases #**# Is there a way to do that, if human cases are not directly estimated?
-  analyze.mosquitoes = rf1.inputs[[8]]
-  mosquito.results = NA # If not analyzing mosquitoes
-  seasonal.mosquito.MLE = NA
-  if (analyze.mosquitoes == 1){
+  if ('seasonal.mosquito.MLE' %in% forecast.targets){
     # First forecast mosquito infection rates
     mosq.model = rf1.inputs[[6]]
     
@@ -98,26 +121,54 @@ rf1 = function(human.data, mosq.data, districtshapefile, weather.data,
       m.independent.vars = independent.vars[independent.vars != "IR"]
       mosquito.results.path = sprintf("%s/mosquitoes", results.path)
       m.label = "mosquitoes" #**# THINK ABOUT THIS AND WHETHER THIS SHOULD BE AN ENTRY in rf1.inputs
-      mosquito.results = do.rf(historical.data, dep.var, m.independent.vars, mosquito.results.path,
-                               response.type = response.type, label = m.label) #do.spatial = 0, create.test.set = 0, create.ci.null = 0
+      
+      # Load previously run data for some testing situations
+      if (use.testing.objects == 1){
+        mosquito.results = rf1::mosquito.results
+      }else{
+        mosquito.results = do.rf(historical.data, dep.var, m.independent.vars, mosquito.results.path,
+                                 response.type = response.type, label = m.label, quantile.model = quantile.model) #do.spatial = 0, create.test.set = 0, create.ci.null = 0
+      }
       mosq.model = mosquito.results[[1]]
+      kept.vars = mosquito.results[[6]]
     }
     
-    # Use the fitted model to make a prediction for the forecast year
-    forecast.data = cbind(forecast.data, predict(mosq.model, newdata = forecast.data))
+    # Update RF1.results
+    if (quantile.model == 1){
+      data.subset = forecast.data[ ,kept.vars] #**# HOPE THIS WORKS
+      predictions = predict(mosq.model, data.subset, what = c(0.5)) # Make a single prediction at the 50% quantile value
+      dist.predictions = predict(mosq.model, data.subset, what = runif(n.draws)) # select random quantile values. #**# Should talk with someone if this is a legitimate way to sample a distribution
+    }else{
+      predictions = predict(mosq.model, newdata = forecast.data)
+      dist.predictions = rep(predictions, n.draws)
+      dist.predictions = matrix(dist.predictions, ncol = n.draws) #**# Confirm the order is correct on this. Should be - should fill by column first.
+    }
     
-    # Rename the added column to distinguish it from the human predictions
-    colnames(forecast.data)[ncol(forecast.data)] = "MOSQ.PREDICTION"
-    seasonal.mosquito.MLE = mean(forecast.data$MOSQ.PREDICTION, na.rm = TRUE) #**# NOTE: perhaps districts should be weighted in this estimate
+    districts = forecast.data$COUNTY
+    targets = rep('seasonal.mosquito.MLE', length(predictions))
+    mosq.records = data.frame(forecast.target = targets, district = districts, value = predictions)
+    RF1.results = rbind(RF1.results, mosq.records)
+
+    # Add statewide result
+    seasonal.mosquito.MLE = mean(predictions, na.rm = TRUE) #**# NOTE: perhaps districts should be weighted in this estimate
+    statewide.record = c('seasonal.mosquito.MLE', sprintf("%s-STATEWIDE", id.string), seasonal.mosquito.MLE)
+    RF1.results = rbind(RF1.results, statewide.record)
+    
+    # Update RF1.distributions & add statewide result
+    mosq.distributions = cbind(targets, districts, dist.predictions)
+    colnames(mosq.distributions) = c('forecast.target', 'district', sprintf("DRAW%s", seq(1,n.draws)))
+    RF1.distributions = rbind(RF1.distributions, mosq.distributions)
+    statewide.prediction = apply(dist.predictions, c(2), mean, na.rm = TRUE) # Should take average MLE across all counties. #**# Has some obvious statistical issues, but not sure how else to do it.
+    statewide.distribution = c('seasonal.mosquito.MLE', sprintf("%s-STATEWIDE", id.string), statewide.prediction) 
+    names(statewide.distribution) =  c('forecast.target', 'district', sprintf("DRAW%s", seq(1,n.draws)))
+    RF1.distributions = rbind(RF1.distributions, statewide.distribution)
+        
+    # Update RF1.bins
+    #**# NOT YET SCRIPTED
   }
   
-  # If not running the human model
-  human.results = NA
-  annual.human.cases = NA
-  
   # Run the human analysis (or not)
-  analyze.humans = rf1.inputs[[9]]
-  if (analyze.humans == 1){
+  if ('annual.human.cases' %in% forecast.targets){
     # Second, forecast human cases
     human.model = rf1.inputs[[7]]
     
@@ -126,32 +177,65 @@ rf1 = function(human.data, mosq.data, districtshapefile, weather.data,
       dep.var = "Cases"
       human.results.path = sprintf("%s/humans", results.path)
       h.label = "humans"
-      human.results = do.rf(historical.data, dep.var, independent.vars, human.results.path, label = h.label, response.type = response.type)
+      
+      # Load previously run data for some testing situations
+      if (use.testing.objects == 1){
+        human.results = rf1::human.results
+      }else{
+        human.results = do.rf(historical.data, dep.var, independent.vars, human.results.path,
+                              label = h.label, response.type = response.type,
+                              quantile.model = quantile.model)
+      }
       human.model = human.results[[1]]
+      kept.vars = human.results[[6]]
     }
     
-    forecast.data = cbind(forecast.data, predict(human.model, newdata = forecast.data))
-    colnames(forecast.data)[ncol(forecast.data)] = "HUMAN.PREDICTION"
     
-    annual.human.cases = sum(forecast.data$HUMAN.PREDICTION)
+    if (quantile.model == 1){
+      data.subset = forecast.data[ , kept.vars] #**# Will this line work?
+      predictions = predict(human.model, data.subset, what = 0.5)
+      dist.predictions = predict(human.model, data.subset, what = runif(n.draws))
+    }else{
+      predictions = predict(human.model, newdata = forecast.data)
+      dist.predictions = rep(predictions, n.draws)
+      dist.predictions = matrix(dist.predictions, ncol = n.draws) #**# Confirm correct matrix formation
+    }
+
+    districts = forecast.data$COUNTY
+    targets = rep('annual.human.cases', length(predictions))
+    human.records = data.frame(forecast.target = targets, district = districts, value = predictions)
+    RF1.results = rbind(RF1.results, human.records)
+    
+    statewide.cases = sum(predictions)
+    statewide.record = c('annual.human.cases', sprintf("%s-STATEWIDE", id.string), statewide.cases)
+    RF1.results = rbind(RF1.results, statewide.record)
+    
+    # Update forecast distributions
+    human.distributions = cbind(targets, districts, dist.predictions)
+    colnames(human.distributions) = c('forecast.target', 'district', sprintf("DRAW%s", seq(1,n.draws)))
+    RF1.distributions = rbind(RF1.distributions, human.distributions)
+    statewide.prediction = apply(dist.predictions, c(2), sum, na.rm = TRUE) # Should take average MLE across all counties. #**# Has some obvious statistical issues, but not sure how else to do it.
+    statewide.distribution = c('annual.human.cases', sprintf("%s-STATEWIDE", id.string), statewide.prediction) 
+    names(statewide.distribution) =  c('forecast.target', 'district', sprintf("DRAW%s", seq(1,n.draws)))
+    RF1.distributions = rbind(RF1.distributions, statewide.distribution)
+    
+    # Update forecast bins
+    #**# NOT SCRIPTED
     
   }
   
-  # Output required data for dfmip
-  RF1.results = list()
-  RF1.results$annual.positive.district.weeks = annual.positive.district.weeks
-  RF1.results$annual.human.cases = annual.human.cases
-  RF1.results$seasonal.mosquito.MLE = seasonal.mosquito.MLE
-  RF1.results$multiplier = NA
-  RF1.results$weeks.cases = NA
-  RF1.results$other.results = list(mosquito.results, human.results)
+  # Remove the leading NA row
+  RF1.results = RF1.results[2:nrow(RF1.results), ]
+  RF1.distributions = RF1.distributions[2:nrow(RF1.distributions), ]
+  #RF1.bins = RF1.bins[2:nrow(RF1.bins), ]
   
-  # Currently outputting a non-probabilistic distribution, so just return the single point estimates
-  RF1.distributions = list()
-  RF1.distributions$annual.human.cases = annual.human.cases
-  RF1.distributions$seasonal.mosquito.MLE = seasonal.mosquito.MLE
+  # Check that fields come out as appropriate format
+  RF1.results$value = as.numeric(as.character(RF1.results$value))
+  for (i in 1:n.draws){
+    RF1.distributions[ , (i + 2)] = as.numeric(as.character(RF1.distributions[ , (i + 2)]))
+  }
   
-  return(list(RF1.results, RF1.distributions))
+  return(list(RF1.results, RF1.distributions, RF1.bins, RF1.other = list(mosquito.results = mosquito.results, human.results = human.results)))
 }
 
 #' rf1.inputs
@@ -184,19 +268,13 @@ rf1 = function(human.data, mosq.data, districtshapefile, weather.data,
 #' @param human.model The Random Forest model to use for forecasting human
 #' cases. If this is to be fitted from the empirical data, this should be set
 #' to NA.
-#' @param analyze.mosquitoes Whether (1) or not (0) results should be produced
-#' for mosquitoes. These will only be in the other.results$rf1 object and
-#' will not affect the forecast.df object
-#' @param analyze.humans Whether (analyze.humans set to 1) or not (set to 0)
-#' results for the human analysis should be produced. If set to 0, the
-#'forecast.df object will return only NA's
 #' @param no.data.exceptions #**# COMING SOON A list of county-years within the
 #' range of analysis.years and analysis.counties that are missing data rather
 #' than 0's
 #'
 #' @name rf1.inputs
 NULL
-#**# NOTE: DUPLICATED IN DOCUMENTATION IN DFMIP. NEED TO FIGURE OUT HOW TO
+#**# NOTE: DUPLICATED IN DOCUMENTATION IN DFMIP. NEED TO FIGURE OUT HOW TO COORDINATE
 
 
 #' Random Forest 1 Model Outputs
@@ -231,12 +309,41 @@ NULL
 #'@details Majority of code was writen in wnv_hlpr.R; January - June 2018.
 #'Transferred to this file & modified beginning in March 2019. Code adapted to
 #'use common inputs with the ArboMAP code of Davis & Wimberly
+#' 
+#' @param trap.data A data frame containing human cases, mosquito infection rate (if applicable),
+#' and independent variables for prediction of human cases and/or mosquito infection rates
+#' @param dep.var The field name containing the dependent variable to analyze
+#' @param independent.vars The field names of the independent variables to include in the analysis
+#'   Variables not listed here but present in the data frame will be excluded from the analysis.
+#' @param results.path The base path in which to place the modeling results.
+#'   Some models will create sub-folders for model specific results
+#' @param do.spatial Whether or not to do spatial crossvalidation (can be time-consuming)
+#' @param create.ci.null Whether or not to generate null model results
+#' @param label A label for the analysis run
+#' @param response.type Whether data should be treated as continuous (mosquito
+#'   rates, number of cases) or binary (0 or 1).
+#' @param exploratory Whether to identify the best model (exploratory = TRUE),
+#'   or whether to run the random forest with all input independent variables (exploratory = FALSE)
+#' @param input.seed A seed for the random number generator to ensure that the results are repeatable
+#' @param temporal.field The field containing the temporal units
+#' @param spatial.field The field containing the spatial units
+#' @param quantile.model Whether (1) or not (0) to use a quantile random forest
+#'   for the final model output. All other calculations and model fitting use the
+#'   standard randomForest package.
+#' 
+#' @return A list containing:\tabular{ll}{
+#' MODEL \tab the random forest prediction model\cr
+#' TEMPORAL.ACCURACY \tab  an accuracy assessment using leave one year out cross-validation\cr
+#' SPATIAL.ACCURACY \tab an accuracy assessment based on leave one district out cross-validation\cr
+#' TEMPORAL.NULL \tab Null model results based on estimates across time\cr
+#' SPATIAL.NULL \tab Null model results based on estimates across space\cr
+#' RETAINED.VARS \tab Variables retained in the final prediction model\cr} 
+#' 
+#' @export do.rf
 #'
-#' #**# Add parameter descriptions.
-#'
-do.rf = function(trap.data, dep.var, independent.vars, results.path, do.spatial = 1, create.test.set = 1,
-                 create.ci.null = 1, label = "", response.type = "continuous", exploratory = TRUE,
-                 input.seed = 20180830, temporal.field = "year", spatial.field = "district"){
+do.rf = function(trap.data, dep.var, independent.vars, results.path, do.spatial = 0,
+                 create.ci.null = 0, label = "", response.type = "continuous", exploratory = TRUE,
+                 input.seed = 20180830, temporal.field = "year", spatial.field = "district", quantile.model = 1){
   
   #require(psych)
   
@@ -316,20 +423,37 @@ do.rf = function(trap.data, dep.var, independent.vars, results.path, do.spatial 
                                          correlation.threshold, response.type, do.spatial, results.path,
                                          spatial.field, temporal.field, label, temporal.field)
     
+    kept.vars = as.character(kept.vars) # Ensure they are not treated as factors
     # Re-run the model with just those that are kept after the variance partitioning process
     f3 = as.formula(paste(dep.var, ' ~ ', paste(kept.vars, collapse = "+")))
     best.m = get.best.m(f3, kept.vars, trap.data, response.type)# Recreate best.m variable for the subset. This should remove one of the warnings R was giving me
     #best.m = 3 #**#
-    rf.model3 = randomForest(f3, data = trap.data, na.action = na.exclude, stringsAsFactors = TRUE, importance = TRUE, mtry = best.m, ntree = 5000)
+    if (quantile.model == 1){
+      y = trap.data[[dep.var]]
+      #message(y[1:5])
+      #message(paste(kept.vars, collapse = ', '))
+      x.df = trap.data[ , kept.vars]
+      #message(head(x.df))
+      rf.model3 = quantregForest(x.df, y, na.action = na.exclude, stringsAsFactors = TRUE, importance = TRUE, mtry = best.m, ntree = 5000)
+    }else{
+      rf.model3 = randomForest(f3, data = trap.data, na.action = na.exclude, stringsAsFactors = TRUE, importance = TRUE, mtry = best.m, ntree = 5000)
+    }
     
   }
   
   # Just run the model for the input independent variables
   if (exploratory == FALSE){
-    f3 = as.formula(paste(dep.var, ' ~ ', paste(independent.vars, collapse = "+")))
     best.m = get.best.m(f3, independent.vars, trap.data, response.type)# Recreate best.m variable for the subset. This should remove one of the warnings R was giving me
-    rf.model3 = randomForest(f3, data = trap.data, na.action = na.exclude, stringsAsFactors = TRUE, importance = TRUE, mtry = best.m, ntree = 5000)
-    kept.vars = independent.vars # For results output
+    f3 = as.formula(paste(dep.var, ' ~ ', paste(independent.vars, collapse = "+")))
+    kept.vars = as.character(independent.vars) # For results output
+    
+    if (quantile.model == 1){
+      y = trap.data[[dep.var]]
+      x.df = trap.data[ , kept.vars]
+      rf.model3 = quantregForest(x.df, y, na.action = na.exclude, stringsAsFactors = TRUE, importance = TRUE, mtry = best.m, ntree = 5000)
+    }else{
+      rf.model3 = randomForest(f3, data = trap.data, na.action = na.exclude, stringsAsFactors = TRUE, importance = TRUE, mtry = best.m, ntree = 5000)
+    }
   }
   
   ## Temporal validation step
@@ -349,9 +473,11 @@ do.rf = function(trap.data, dep.var, independent.vars, results.path, do.spatial 
   temporal.null = null.validation(trap.data, dep.var, temporal.field, create.ci.null)
   spatial.null = null.validation(trap.data, dep.var, spatial.field, create.ci.null)
   
-  # Write overall model observations and predictions to file #**# But these will be predictions from the same data used to generate the model. Yes. But the accuracy was assessed separately, and those will be the accuracy metrics reported.
-  message("Writing predictions")
-  write.predictions(trap.data, dep.var, rf.model3, results.path, spatial.field, temporal.field, label)
+  if (quantile.model == 0){
+    # Write overall model observations and predictions to file #**# But these will be predictions from the same data used to generate the model. Yes. But the accuracy was assessed separately, and those will be the accuracy metrics reported.
+    message("Writing predictions")
+    write.predictions(trap.data, dep.var, rf.model3, results.path, spatial.field, temporal.field, label)
+  }
   
   #**# MAKE OUTPUTS #**# CLEAN THIS UP
   #make.maps(model.results, spatial.resolution, temporal.resolution, results.path)
@@ -361,7 +487,9 @@ do.rf = function(trap.data, dep.var, independent.vars, results.path, do.spatial 
     spatial.temporal.barplots(temporal.accuracy, spatial.accuracy, spatial.field, temporal.field, results.path, label)
   }
   
-  return(list(MODEL = rf.model3, TEMPORAL.ACCURACY = temporal.accuracy, SPATIAL.ACCURACY = spatial.accuracy, TEMPORAL.NULL = temporal.null, SPATIAL.NULL = spatial.null, RETAINED.VARS = kept.vars))
+  return(list(MODEL = rf.model3, TEMPORAL.ACCURACY = temporal.accuracy,
+              SPATIAL.ACCURACY = spatial.accuracy, TEMPORAL.NULL = temporal.null,
+              SPATIAL.NULL = spatial.null, RETAINED.VARS = kept.vars))
 }
 
 
@@ -375,6 +503,8 @@ do.rf = function(trap.data, dep.var, independent.vars, results.path, do.spatial 
 #' @param rf1.inputs see \code{\link{rf1.inputs}}
 #' @param results.path #**# ADD
 #' @param break.type #**# ADD
+#'
+#' @noRd
 #'
 FormatDataForRF1 = function(human.data, mosq.data, weekinquestion, weather.data, rf1.inputs, results.path, break.type){
   
@@ -428,6 +558,8 @@ FormatDataForRF1 = function(human.data, mosq.data, weekinquestion, weather.data,
 #'
 #' Simple little function to aggregate human case data by year and county
 #'
+#' @noRd
+#'
 convert.human.data = function(hd, all.counties, all.years){
   #**# The steps creating the year were already done in forecast_NYCT.R and could be required as part of the input.
   hd$year = mapply(substr, hd$date, nchar(as.character(hd$date)) - 3, nchar(as.character(hd$date)))
@@ -459,6 +591,8 @@ convert.human.data = function(hd, all.counties, all.years){
 
 #' Assign Breaks
 #'
+#' @noRd
+#'
 assign.breaks = function(weekinquestion, break.type){
   # Get the date of the forecast. Only include breaks prior to forecast.doy
   forecast.year=  as.numeric(substr(as.character(weekinquestion), 1, 4))
@@ -482,8 +616,14 @@ assign.breaks = function(weekinquestion, break.type){
 
 #' Convert environmental data to the seasonal format used by the RF1 model
 #'
+#' @noRd
 #'
 convert.env.data = function(weather.data, all.counties, season.breaks){
+  
+  # These are column names, but the dplyr syntax makes them flag up as undefined global variables
+  # So I define them here to make R happy, even though these are not actually used anywhere in the following
+  # code, as the entries below refer to column names in a data object
+  pr = rmean = tmaxc = tmeanc = tminc = vpd = wbreaks = NA
   
   #Save processing time by restricting to just districts of interest
   weather.data = weather.data[weather.data$district %in% all.counties, ]
@@ -538,6 +678,7 @@ convert.env.data = function(weather.data, all.counties, season.breaks){
 
 #' Assign break grouping for aggregating weather data
 #'
+#' @noRd
 #'
 assign.groups = function(doy, breaks){
   
@@ -572,6 +713,8 @@ assign.groups = function(doy, breaks){
 #' @param env.data The environmental data object
 #' @param files.to.add A vector containing the full paths for .csv files to merge into the env.data object
 #' @param merge.type.vec A vector containing the merge type for each of the files to be added
+#'
+#' @noRd
 #'
 add.rf1.inputs = function(env.data, rf1.inputs, breaks){
   
@@ -609,6 +752,9 @@ add.rf1.inputs = function(env.data, rf1.inputs, breaks){
 #' Taken from wnv_hlpr.R, rs.data is env.data object, but with the name used in wnv_hlpr.R
 #'
 #' Quick function to restore original field names after the merge
+#' 
+#' @noRd
+#' 
 cleanup.garbage = function(rs.data){
   # Clean up merge garbage to restore original variable names
   if (length(rs.data$year) == 0){
@@ -635,6 +781,8 @@ cleanup.garbage = function(rs.data){
 
 #' Function to add data to the env.data object
 #'
+#' Modified from wnv_hlpr.
+#' 
 #' @param rs.data env.data, the object to have data appended to
 #' @param this.file the file containing the data to append
 #' @param this.merge the structure of the data for the merge - i.e. "spatial_temporal" for spatial and temporal,
@@ -642,12 +790,14 @@ cleanup.garbage = function(rs.data){
 #' temporal only would be theoretically possible, but has not been scripted.
 #' For now, it assumes the spatial is county, and temporal is year. Need to generalize this to spatial and temporal.
 #'
-#' #**# do I need the field renames, or does the cleanup.garbage step adequately address these issues?
-#' #**# If it doesn't, can I move these corrections there, and streamline this function?
-#'
-#' Modified from wnv_hlpr.R
+#' @noRd
 #'
 add.data = function(rs.data, this.file, this.merge, breaks){
+
+  #**# do I need the field renames, or does the cleanup.garbage step adequately address these issues?
+  #**# If it doesn't, can I move these corrections there, and streamline this function?
+  
+  
   these.data = read.csv(this.file)
   
   if (this.merge == "spatial_temporal"){
@@ -672,7 +822,7 @@ add.data = function(rs.data, this.file, this.merge, breaks){
             keep = TRUE
           }
         }
-        keep.vec = c(keep.vec, exclude)
+        keep.vec = c(keep.vec, keep)
       }
     }
     
@@ -711,6 +861,8 @@ add.data = function(rs.data, this.file, this.merge, breaks){
 
 #' Function to identify the m value that produces the best results
 #'
+#' @noRd
+#'
 get.best.m = function(f, independent.vars, trap.data, response.type){
   best.r2 = 0
   best.m = 0
@@ -740,6 +892,10 @@ get.best.m = function(f, independent.vars, trap.data, response.type){
   return(best.m)
 }
 
+#' Systematic Validation
+#'
+#' @noRd
+#'
 systematic.validation = function(trap.data, dep.var, f2, best.m, drop.field, response.type = "continuous"){
   #require(caret)
   
@@ -872,6 +1028,9 @@ systematic.validation = function(trap.data, dep.var, f2, best.m, drop.field, res
 
 
 #' Similar to systematic, but for the production of the null comparisons
+#' 
+#' @noRd
+#' 
 null.validation = function(trap.data, dep.var, drop.field, create.ci.null){
   #require(caret)
   
@@ -999,6 +1158,8 @@ null.validation = function(trap.data, dep.var, drop.field, create.ci.null){
 #' Consequently, a negative R2 might be better than no knowledge at all, but it's not apt to be very good (depends on how variable the data are from the mean!)
 #'  Basic assumption is that there is some variability around the mean, and that typically, a model should be able to explain that variation better than a static mean.
 #'
+#' @noRd
+#'
 estimate.custom.r2 = function(observed, predicted){
   
   deviation = observed - predicted
@@ -1021,6 +1182,9 @@ estimate.custom.r2 = function(observed, predicted){
 }
 
 #' Determine the contribution of each variable to the total variation explained
+#' 
+#' @noRd
+#' 
 do.variance.partitioning = function(trap.data, dep.var, best.vars, best.m, temporal.accuracy.R2,
                                     drop.thresholds, correlation.threshold, response.type,
                                     do.spatial, results.path,
@@ -1105,6 +1269,9 @@ do.variance.partitioning = function(trap.data, dep.var, best.vars, best.m, tempo
 }
 
 #' Calculate the variance partitioning run
+#' 
+#' @noRd
+#' 
 run.partitioning = function(trap.data, dep.var, remaining.vars, best.m, temporal.accuracy.R2, response.type, temporal.field = "TEMPORAL"){
   
   my.f = as.formula(paste(dep.var, ' ~ ', paste(remaining.vars, collapse = "+")))
@@ -1120,6 +1287,10 @@ run.partitioning = function(trap.data, dep.var, remaining.vars, best.m, temporal
   return(R2.difference)
 }
 
+#' A simple function for using a threshold
+#' 
+#' @noRd
+#' 
 simple.threshold = function(x, threshold){
   y = NA
   if (x >= threshold){ y = TRUE }
@@ -1128,6 +1299,8 @@ simple.threshold = function(x, threshold){
 }
 
 #' Write model predictions
+#'
+#' @noRd
 #'
 write.predictions = function(trap.data, dep.var, rf.model, results.path, spatial.resolution, temporal.resolution, label){
   # Code used to patch the human analyses prior to addition of dep.var
@@ -1146,10 +1319,14 @@ write.predictions = function(trap.data, dep.var, rf.model, results.path, spatial
   
 }
 
+#' Create spatial/temporal barplots
+#' 
+#' @noRd
+#' 
 spatial.temporal.barplots = function(temporal.accuracy, spatial.accuracy, spatial.resolution, temporal.resolution, results.path, label){
   
   outfile = sprintf("%s/RMSE_Spearman_%s_%s%s.tif", results.path, spatial.resolution, temporal.resolution, label)
-  tiff(file = outfile, compression = c("lzw"), height = 2400, width = 2400, res = 300)
+  tiff(filename = outfile, compression = c("lzw"), height = 2400, width = 2400, res = 300)
   
   par(mfrow = c(2,2))
   par(mar = c(8,6,2,0))

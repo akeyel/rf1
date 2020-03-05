@@ -37,14 +37,6 @@ should be set to NA}
 cases. If this is to be fitted from the empirical data, this should be set
 to NA.}
 
-\item{analyze.mosquitoes}{Whether (1) or not (0) results should be produced
-for mosquitoes. These will only be in the other.results$rf1 object and
-will not affect the forecast.df object}
-
-\item{analyze.humans}{Whether (analyze.humans set to 1) or not (set to 0)
-results for the human analysis should be produced. If set to 0, the
-forecast.df object will return only NA's}
-
 \item{no.data.exceptions}{#**# COMING SOON A list of county-years within the
 range of analysis.years and analysis.counties that are missing data rather
 than 0's}

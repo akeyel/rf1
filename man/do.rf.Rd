@@ -4,11 +4,53 @@
 \alias{do.rf}
 \title{A random forest based disease forecasting approach}
 \usage{
-do.rf(trap.data, dep.var, independent.vars, results.path, do.spatial = 1,
-  create.test.set = 1, create.ci.null = 1, label = "",
-  response.type = "continuous", exploratory = TRUE,
-  input.seed = 20180830, temporal.field = "year",
-  spatial.field = "district")
+do.rf(trap.data, dep.var, independent.vars, results.path, do.spatial = 0,
+  create.ci.null = 0, label = "", response.type = "continuous",
+  exploratory = TRUE, input.seed = 20180830, temporal.field = "year",
+  spatial.field = "district", quantile.model = 1)
+}
+\arguments{
+\item{trap.data}{A data frame containing human cases, mosquito infection rate (if applicable),
+and independent variables for prediction of human cases and/or mosquito infection rates}
+
+\item{dep.var}{The field name containing the dependent variable to analyze}
+
+\item{independent.vars}{The field names of the independent variables to include in the analysis
+Variables not listed here but present in the data frame will be excluded from the analysis.}
+
+\item{results.path}{The base path in which to place the modeling results.
+Some models will create sub-folders for model specific results}
+
+\item{do.spatial}{Whether or not to do spatial crossvalidation (can be time-consuming)}
+
+\item{create.ci.null}{Whether or not to generate null model results}
+
+\item{label}{A label for the analysis run}
+
+\item{response.type}{Whether data should be treated as continuous (mosquito
+rates, number of cases) or binary (0 or 1).}
+
+\item{exploratory}{Whether to identify the best model (exploratory = TRUE),
+or whether to run the random forest with all input independent variables (exploratory = FALSE)}
+
+\item{input.seed}{A seed for the random number generator to ensure that the results are repeatable}
+
+\item{temporal.field}{The field containing the temporal units}
+
+\item{spatial.field}{The field containing the spatial units}
+
+\item{quantile.model}{Whether (1) or not (0) to use a quantile random forest
+for the final model output. All other calculations and model fitting use the
+standard randomForest package.}
+}
+\value{
+A list containing:\tabular{ll}{
+MODEL \tab the random forest prediction model\cr
+TEMPORAL.ACCURACY \tab  an accuracy assessment using leave one year out cross-validation\cr
+SPATIAL.ACCURACY \tab an accuracy assessment based on leave one district out cross-validation\cr
+TEMPORAL.NULL \tab Null model results based on estimates across time\cr
+SPATIAL.NULL \tab Null model results based on estimates across space\cr
+RETAINED.VARS \tab Variables retained in the final prediction model\cr}
 }
 \description{
 The do.rf function runs the random forest portion of the code
@@ -17,6 +59,4 @@ The do.rf function runs the random forest portion of the code
 Majority of code was writen in wnv_hlpr.R; January - June 2018.
 Transferred to this file & modified beginning in March 2019. Code adapted to
 use common inputs with the ArboMAP code of Davis & Wimberly
-
-#**# Add parameter descriptions.
 }

@@ -4,11 +4,17 @@
 \alias{rf1}
 \title{Run the rf1 model}
 \usage{
-rf1(human.data, mosq.data, districtshapefile, weather.data, weekinquestion,
-  rf1.inputs, results.path, break.type = "seasonal",
-  response.type = "continuous")
+rf1(forecast.targets, human.data, mosq.data, weather.data, weekinquestion,
+  rf1.inputs, results.path, id.string, break.type = "seasonal",
+  response.type = "continuous", quantile.model = 1, n.draws = 1000,
+  bins = c(0, seq(1, 51, 1), 101, 151, 201, 1000),
+  use.testing.objects = FALSE)
 }
 \arguments{
+\item{forecast.targets}{A vector containing options of what to forecast.
+'annual.human.cases' generates human case predictions, while 'seasonal.mosquito.MLE'
+provides options for mosquito predictions}
+
 \item{human.data}{Data on human cases of the disease. Must be formatted with
 two columns: district and date. The district column contains the spatial
 unit (typically county), while the date corresponds to the date of the
@@ -19,9 +25,6 @@ formatted with 4 columns: district (the spatial unit, e.g. county),
 col_date: the date the mosquitoes were tested, wnv_result: whether or not
 the pool was positive, pool_size: the number of mosquitoes tested in the
 pool. A fifth column species is optional but is not used by the code}
-
-\item{districtshapefile}{The shapefile with polygons representing the
-districts. #**# Is this used by RF1?}
 
 \item{weather.data}{Data on weather variables to be included in the analysis.
 See the read.weather.data function for details about data format. The
@@ -39,6 +42,8 @@ MORE DETAILS}
 \item{results.path}{The base path in which to place the modeling results.
 Some models will create sub-folders for model specific results}
 
+\item{id.string}{An id to use for labeling the aggregations across all districts}
+
 \item{break.type}{The temporal frequency to use for the data. The default is
 'seasonal' which breaks the environmental data into January, February,
 March; April, May, June; July, August, September; October, November,
@@ -46,6 +51,21 @@ December. Other options may be supported in the future.}
 
 \item{response.type}{Whether data should be treated as continuous (mosquito
 rates, number of cases) or binary (0 or 1).}
+
+\item{quantile.model}{Whether (1) or not (0) to use a quantile random forest
+for the final model output. All other calculations and model fitting use the
+standard randomForest package.}
+
+\item{n.draws}{The number of random realizations to draw for the RF1.distributions object}
+
+\item{bins}{Bin break points for the CDC forecast challenge}
+
+\item{use.testing.objects}{An indicator. If TRUE, the analysis will not run,
+but will load previously saved outputs in order to expedite testing the formatting
+of the code outputs.}
+}
+\value{
+Four outputs are generated: The Results dataframe, the Distributions dataframe, the Bins dataframe, and the model object results
 }
 \description{
 The RF1 model first fits a random forest, then excludes all variables with
