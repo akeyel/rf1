@@ -156,3 +156,15 @@ test_that("rf1 model final results are correctly formatted for export to dfmip",
   # Remove testing directory
   unlink(results.path)
 })
+
+# Test DOY.to.day function
+testthat("DOY.to.date function works"{
+  expect_equal(DOY.to.date(1, 2001), "2001-01-01")
+  expect_equal(DOY.to.date(31, 2001), "2001-01-31")
+  expect_equal(DOY.to.date(32, 2001), "2001-02-01")
+  expect_equal(DOY.to.date(59, 2001), '2001-02-28')
+  expect_equal(DOY.to.date(60, 2001), '2001-03-01')
+  expect_equal(DOY.to.date(60, 2000), '2000-02-29')
+  expect_equal(DOY.to.date(365, 2001), '2001-12-31')
+  expect_equal(DOY.to.date(366, 2000), '2000-12-31')
+})

@@ -53,6 +53,37 @@
 'human.results'
 
 
+#' Convert day of year to date
+#' 
+#' @noRd
+#' 
+DOY.to.date = function(doy, year){
+  
+  # Determine if it is a leap year
+  days = get.days(year)
+  
+  # Sum up days from months
+  months = c(31,28,31,30,31,30,31,31,30,31,30,31)
+
+  if (days == 366){ months[2] = 29  }
+
+  day = doy
+  month = 1
+  month.total = months[month]
+  
+  while (day > month.total){
+    # Update date information
+    day = day - months[month]
+    month = month + 1
+    month.total = months[month]
+  }
+  
+  date = sprintf("%s-%02d-%02d", year, month, day)
+  
+  return(date)
+}
+
+
 # Create simulated data for purpose of testing code
 create.simulated.data = function(){
   districts = c("district1", "district2", "district3", "district4")
@@ -94,10 +125,11 @@ create.simulated.data = function(){
   pr = stats::rnorm(length(district.vec))
   rmean = stats::rnorm(length(district.vec))
   vpd = stats::rnorm(length(district.vec))
+  date = mapply(DOY.to.date, doy, year)
   
   weather.data = data.frame(district = district.vec, doy = doy, year = year,
                             tminc = tminc, tmeanc = tmeanc, tmaxc = tmaxc,
-                            pr = pr, rmean = rmean, vpd = vpd)
+                            pr = pr, rmean = rmean, vpd = vpd, date = date)
   usethis::use_data(human.data, overwrite = TRUE)
   usethis::use_data(mosq.data, overwrite = TRUE)
   usethis::use_data(weather.data, overwrite = TRUE)
