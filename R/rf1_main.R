@@ -234,8 +234,17 @@ rf1 = function(forecast.targets, human.data, mosq.data, weather.data,
   for (i in 1:n.draws){
     RF1.distributions[ , (i + 2)] = as.numeric(as.character(RF1.distributions[ , (i + 2)]))
   }
-  
-  return(list(RF1.results, RF1.distributions, RF1.bins, RF1.other = list(mosquito.results = mosquito.results, human.results = human.results)))
+
+  # Set up other outputs
+  RF1.other = list()
+  if ('annual.human.cases' %in% forecast.targets){
+    RF1.other$human.results =  human.results
+  }
+  if ('seasonal.mosquito.MLE' %in% forecast.targets){
+    RF1.other$mosquito.results = mosquito.results
+  }
+    
+  return(list(RF1.results, RF1.distributions, RF1.bins, RF1.other = RF1.other))
 }
 
 #' rf1.inputs
