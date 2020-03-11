@@ -7,7 +7,8 @@
 do.rf(trap.data, dep.var, independent.vars, results.path, do.spatial = 0,
   create.ci.null = 0, label = "", response.type = "continuous",
   exploratory = TRUE, input.seed = 20180830, temporal.field = "year",
-  spatial.field = "district", quantile.model = 1)
+  spatial.field = "district", quantile.model = 1,
+  display.messages = 0)
 }
 \arguments{
 \item{trap.data}{A data frame containing human cases, mosquito infection rate (if applicable),
@@ -42,6 +43,8 @@ or whether to run the random forest with all input independent variables (explor
 \item{quantile.model}{Whether (1) or not (0) to use a quantile random forest
 for the final model output. All other calculations and model fitting use the
 standard randomForest package.}
+
+\item{display.messages}{Whether or not update messages should be output}
 }
 \value{
 A list containing:\tabular{ll}{

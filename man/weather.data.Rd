@@ -4,7 +4,7 @@
 \name{weather.data}
 \alias{weather.data}
 \title{Weather Data}
-\format{An object of class \code{data.frame} with 7304 rows and 9 columns.}
+\format{An object of class \code{data.frame} with 7304 rows and 10 columns.}
 \source{
 See file rf1_simulated_data.R
 }
