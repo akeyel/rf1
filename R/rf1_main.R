@@ -339,6 +339,7 @@ NULL
 #' @param quantile.model Whether (1) or not (0) to use a quantile random forest
 #'   for the final model output. All other calculations and model fitting use the
 #'   standard randomForest package.
+#' @param display.messages Whether or not update messages should be output
 #' 
 #' @return A list containing:\tabular{ll}{
 #' MODEL \tab the random forest prediction model\cr
@@ -352,7 +353,8 @@ NULL
 #'
 do.rf = function(trap.data, dep.var, independent.vars, results.path, do.spatial = 0,
                  create.ci.null = 0, label = "", response.type = "continuous", exploratory = TRUE,
-                 input.seed = 20180830, temporal.field = "year", spatial.field = "district", quantile.model = 1){
+                 input.seed = 20180830, temporal.field = "year", spatial.field = "district",
+                 quantile.model = 1, display.messages = 0){
   
   #require(psych)
   
@@ -374,8 +376,10 @@ do.rf = function(trap.data, dep.var, independent.vars, results.path, do.spatial 
   NO.IR.N = nrow(trap.data[is.na(trap.data$IR), ]) # Get number of NA values for Infection Rate
   IR.not.zero = nrow(trap.data[trap.data$IR > 0, ])
   WNV.N = IR.not.zero + NO.IR.N
-  message(sprintf("Total N: %s\nWNV+ N: %s\nNo IR N: %s", N, WNV.N, NO.IR.N))
-  message("These numbers are not valid for the human case analyses")
+  if (display.messages == 1){
+    message(sprintf("Total N: %s\nWNV+ N: %s\nNo IR N: %s", N, WNV.N, NO.IR.N))
+    message("These numbers are not valid for the human case analyses")
+  }
   
   
   # Set up the dependent variable
@@ -398,7 +402,7 @@ do.rf = function(trap.data, dep.var, independent.vars, results.path, do.spatial 
     #best.m = 3 #**#
     
     # Regenerate best model using more trees
-    message("Creating the model with the best m using 5000 trees")
+    if (display.messages == 1){  message("Creating the model with the best m using 5000 trees")  }
     rf.model = randomForest(f, data = trap.data, na.action = na.exclude, stringsAsFactors = TRUE, importance = TRUE, mtry = best.m, ntree = 5000)
     
     important.stuff = sort(rf.model$importance[,1], decreasing = TRUE)
@@ -414,7 +418,7 @@ do.rf = function(trap.data, dep.var, independent.vars, results.path, do.spatial 
     # Keep any variables above the mean importance
     best.vars = names(important.stuff)[important.stuff > mean(important.stuff)]
     
-    message("Creating a refined model that only includes variables of high importance")
+    if(display.messages == 1){  message("Creating a refined model that only includes variables of high importance")  }
     f2 = as.formula(paste(dep.var, ' ~ ', paste(best.vars, collapse = "+")))
     best.m = get.best.m(f2, best.vars, trap.data, response.type)# Recreate best.m variable for the subset. This should remove one of the warnings R was giving me
     #best.m = 3 #**#
@@ -422,7 +426,7 @@ do.rf = function(trap.data, dep.var, independent.vars, results.path, do.spatial 
     
     ## Refine variable set based on variance partitioning results
     # Calculate a preliminary temporal accuracy to provide a baseline
-    temporal.accuracy.prelim = systematic.validation(trap.data, dep.var, f2, best.m, "year", response.type)
+    temporal.accuracy.prelim = systematic.validation(trap.data, dep.var, f2, best.m, "year", response.type, display.messages)
     temporal.accuracy.R2 = temporal.accuracy.prelim$OVERALL[["R2.sasha"]]
     correlation.threshold = "" # 0.5 #**# not using this aspect initially
     drop.thresholds = c(0, 0.001, 0.002, 0.005, 0.01) #**# Try a vector of thresholds. Use the threshold that corresponds to the fewest variables with no more than a 5% decrease in prediction accuracy
@@ -430,7 +434,7 @@ do.rf = function(trap.data, dep.var, independent.vars, results.path, do.spatial 
     # Run variance partitioning
     kept.vars = do.variance.partitioning(trap.data, dep.var, best.vars, best.m, temporal.accuracy.R2, drop.thresholds,
                                          correlation.threshold, response.type, do.spatial, results.path,
-                                         spatial.field, temporal.field, label, temporal.field)
+                                         spatial.field, temporal.field, label, temporal.field, display.messages)
     
     kept.vars = as.character(kept.vars) # Ensure they are not treated as factors
     # Re-run the model with just those that are kept after the variance partitioning process
@@ -466,25 +470,25 @@ do.rf = function(trap.data, dep.var, independent.vars, results.path, do.spatial 
   }
   
   ## Temporal validation step
-  message("Calculating temporal accuracy statistics")
-  temporal.accuracy = systematic.validation(trap.data, dep.var, f3, best.m, temporal.field, response.type) # formerly "TEMPORAL" instead of being temporal.field
+  if (display.messages == 1){  message("Calculating temporal accuracy statistics")  }
+  temporal.accuracy = systematic.validation(trap.data, dep.var, f3, best.m, temporal.field, response.type, display.messages) # formerly "TEMPORAL" instead of being temporal.field
   
   if (do.spatial == 1){
     ## Spatial validation step
-    message("Calculating spatial accuracy statistics")
-    spatial.accuracy = systematic.validation(trap.data, dep.var, f3, best.m, spatial.field, response.type) #**# formerly SPATIAL instead of district
+    if (display.messages == 1){ message("Calculating spatial accuracy statistics") }
+    spatial.accuracy = systematic.validation(trap.data, dep.var, f3, best.m, spatial.field, response.type, display.messages) #**# formerly SPATIAL instead of district
   }else{
-    message("Skipping spatial accuracy assessment (may take > 17 hours for some analyses)")
+    if (display.messages == 1){message("Skipping spatial accuracy assessment (may take > 17 hours for some analyses)")}
     spatial.accuracy = NA
   }
   
-  message("Creating null models")
-  temporal.null = null.validation(trap.data, dep.var, temporal.field, create.ci.null)
-  spatial.null = null.validation(trap.data, dep.var, spatial.field, create.ci.null)
+  if (display.messages == 1){message("Creating null models")}
+  temporal.null = null.validation(trap.data, dep.var, temporal.field, create.ci.null, display.messages)
+  spatial.null = null.validation(trap.data, dep.var, spatial.field, create.ci.null, display.messages)
   
   if (quantile.model == 0){
     # Write overall model observations and predictions to file #**# But these will be predictions from the same data used to generate the model. Yes. But the accuracy was assessed separately, and those will be the accuracy metrics reported.
-    message("Writing predictions")
+    if (display.messages == 1){message("Writing predictions")}
     write.predictions(trap.data, dep.var, rf.model3, results.path, spatial.field, temporal.field, label)
   }
   
@@ -492,7 +496,7 @@ do.rf = function(trap.data, dep.var, independent.vars, results.path, do.spatial 
   #make.maps(model.results, spatial.resolution, temporal.resolution, results.path)
   #plot.residuals(model.results, spatial.resolution, temporal.resolution)
   if (do.spatial == 1){
-    message("Creating barplots")
+    if(display.messages == 1){ message("Creating barplots")}
     spatial.temporal.barplots(temporal.accuracy, spatial.accuracy, spatial.field, temporal.field, results.path, label)
   }
   
@@ -879,7 +883,7 @@ get.best.m = function(f, independent.vars, trap.data, response.type){
   # Demo with 500 trees - probably too few.
   # Getting m of 3-4. Seems about right
   for (m in 1:length(independent.vars)){
-    message(sprintf("Trying m = %s", m))
+    #message(sprintf("Trying m = %s", m))
     rf.model = randomForest(f, data = trap.data, na.action = na.exclude, stringsAsFactors = TRUE, importance = TRUE, mtry = m, ntree = 1000)
     
     if (response.type == "continuous"){
@@ -889,7 +893,7 @@ get.best.m = function(f, independent.vars, trap.data, response.type){
       }
     }
     if (response.type == "binary"){
-      message("R2 used for choice of m is actually the out-of-box error rate, not the R2")
+      #message("R2 used for choice of m is actually the out-of-box error rate, not the R2")
       if(median(rf.model$err.rate[ ,1]) < best.r2){
         best.m = m
         best.r2 = median(rf.model$err.rate[ ,1])
@@ -905,7 +909,7 @@ get.best.m = function(f, independent.vars, trap.data, response.type){
 #'
 #' @noRd
 #'
-systematic.validation = function(trap.data, dep.var, f2, best.m, drop.field, response.type = "continuous"){
+systematic.validation = function(trap.data, dep.var, f2, best.m, drop.field, response.type = "continuous", display.messages = 1){
   #require(caret)
   
   # Get list of unique values from the field to have one unit sequentially dropped
@@ -945,7 +949,7 @@ systematic.validation = function(trap.data, dep.var, f2, best.m, drop.field, res
       
       if (response.type == "continuous"){
         # Get Spearman correlations for this unit
-        this.spearman = cor(validation.data[[dep.var]], outcomes, use = "complete.obs")
+        this.spearman = suppressWarnings(cor(validation.data[[dep.var]], outcomes, use = "complete.obs"))
         spearmans = c(spearmans, this.spearman)
       }
       if (response.type == "binary"){
@@ -958,7 +962,7 @@ systematic.validation = function(trap.data, dep.var, f2, best.m, drop.field, res
       #test.type(stuff, 'L1991')
       errors = rbind(errors, stuff)
     }else{
-      message(sprintf("%s had no variation in the dependent variable %s", drop.val, dep.var))
+      if(display.messages == 1){message(sprintf("%s had no variation in the dependent variable %s", drop.val, dep.var))}
       to.exclude = c(to.exclude, drop.val)
     }
     
@@ -1040,11 +1044,11 @@ systematic.validation = function(trap.data, dep.var, f2, best.m, drop.field, res
 #' 
 #' @noRd
 #' 
-null.validation = function(trap.data, dep.var, drop.field, create.ci.null){
+null.validation = function(trap.data, dep.var, drop.field, create.ci.null, display.messages){
   #require(caret)
   
   # Add a message to warn users that some functionality has been turned off - to ensure it is intentional
-  if (create.ci.null != 1){ message("Not creating a Null model based on the confidence intervals of the original data")}
+  if (create.ci.null != 1 & display.messages == 1){ message("Not creating a Null model based on the confidence intervals of the original data")}
   
   # Get list of unique values from the field to have one unit sequentially dropped
   drop.vals = unique(trap.data[[drop.field]])
@@ -1198,10 +1202,12 @@ do.variance.partitioning = function(trap.data, dep.var, best.vars, best.m, tempo
                                     drop.thresholds, correlation.threshold, response.type,
                                     do.spatial, results.path,
                                     spatial.resolution, temporal.resolution, this.label,
-                                    temporal.field){
+                                    temporal.field, display.messages){
   
-  message("Running variance partitioning")
-  message(sprintf("Baseline R2 is %.3f", temporal.accuracy.R2))
+  if (display.messages == 1){
+    message("Running variance partitioning")
+    message(sprintf("Baseline R2 is %.3f", temporal.accuracy.R2))
+  }
   
   # Check if a spatial partitioning is desired - if so, throw a warning
   if (do.spatial == 1){ warning("Variance partitioning was performed for temporal crossvalidation, NOT spatial crossvalidation. The code could easily be adapted to support the spatial partitioning, but currently it does not.") }
@@ -1217,9 +1223,10 @@ do.variance.partitioning = function(trap.data, dep.var, best.vars, best.m, tempo
   
   # Run variance partitioning leaving each variable out in sequence
   for (this.var in best.vars){
-    message(sprintf("Processing %s", this.var))
+    if (display.messages == 1){message(sprintf("Processing %s", this.var))}
     remaining.vars = best.vars[best.vars != this.var] # Drop the variable in question
-    out.R2 = run.partitioning(trap.data, dep.var, remaining.vars, best.m, temporal.accuracy.R2, response.type, temporal.field)
+    out.R2 = run.partitioning(trap.data, dep.var, remaining.vars, best.m, temporal.accuracy.R2,
+                              response.type, temporal.field, display.messages)
     unique.variation = c(unique.variation, out.R2)
     
     if (correlation.threshold != ""){
@@ -1228,7 +1235,8 @@ do.variance.partitioning = function(trap.data, dep.var, best.vars, best.m, tempo
       cor.index = sapply(cor.row, simple.threshold, correlation.threshold)
       #cor.index = matrix(cor.index, ncol = 1)
       remaining.vars2 = best.vars[!cor.index]
-      out.cor.R2 = run.partitioning(trap.data, dep.var, remaining.vars2, best.m, temporal.accuracy.R2, response.type, temporal.field)
+      out.cor.R2 = run.partitioning(trap.data, dep.var, remaining.vars2, best.m, temporal.accuracy.R2,
+                                    response.type, temporal.field, display.messages)
       corr.variation = c(corr.variation, out.cor.R2)
       n.corr = c(n.corr, sum(cor.index)) # This works because TRUE evaluates to 1 and FALSE evaluates to 0
     }
@@ -1250,10 +1258,11 @@ do.variance.partitioning = function(trap.data, dep.var, best.vars, best.m, tempo
     remaining.vars3 = out.df[out.df$UNIQUE.R2 > threshold, 1] # 1 indicates the first column
     
     if (length(remaining.vars3) == 0){
-      message(sprintf("No variables remaining at threshold %s", threshold))
+      if(display.messages == 1){message(sprintf("No variables remaining at threshold %s", threshold))}
     }else{
-      this.R2.diff = run.partitioning(trap.data, dep.var, remaining.vars3, best.m, temporal.accuracy.R2, response.type, temporal.field)
-      message(sprintf("R2 difference for threshold %s is %.3f", threshold, this.R2.diff))
+      this.R2.diff = run.partitioning(trap.data, dep.var, remaining.vars3, best.m, temporal.accuracy.R2,
+                                      response.type, temporal.field, display.messages)
+      if(display.messages == 1){message(sprintf("R2 difference for threshold %s is %.3f", threshold, this.R2.diff))}
       
       # Right now, this JUST accepts models that constitute an improvement.
       # We likely want to add a penalty term that favors simpler models with similar explanatory power.
@@ -1281,14 +1290,15 @@ do.variance.partitioning = function(trap.data, dep.var, best.vars, best.m, tempo
 #' 
 #' @noRd
 #' 
-run.partitioning = function(trap.data, dep.var, remaining.vars, best.m, temporal.accuracy.R2, response.type, temporal.field = "TEMPORAL"){
+run.partitioning = function(trap.data, dep.var, remaining.vars, best.m, temporal.accuracy.R2, response.type,
+                            temporal.field = "TEMPORAL", display.messages = 1){
   
   my.f = as.formula(paste(dep.var, ' ~ ', paste(remaining.vars, collapse = "+")))
   
   # Redefine best.m if it is no longer applicable when the variable set is reduced
   if (best.m > length(remaining.vars)){ best.m = length(remaining.vars) }
   
-  temporal.accuracy = systematic.validation(trap.data, dep.var, my.f, best.m, temporal.field, response.type)
+  temporal.accuracy = systematic.validation(trap.data, dep.var, my.f, best.m, temporal.field, response.type, display.messages)
   
   # Calculate difference between the main run with all variables and this run
   R2.difference = temporal.accuracy.R2 - temporal.accuracy$OVERALL[["R2.sasha"]]
@@ -1456,7 +1466,7 @@ calculate.MLE.v2 = function(md, temporal.resolution = "annual"){
     
     # If no pools, assign a value of -999 to distinguish from undefined IR's
     if (length(positives) == 0 & length(negatives) == 0){
-      message(sprintf("No pools for group %s. Not sure how that happened. Values of -999 assigned", group.id))
+      warning(sprintf("No pools for group %s. Not sure how that happened. Values of -999 assigned", group.id))
       IR = -999
       CI.upper = -999
       CI.lower = -999
