@@ -89,8 +89,8 @@ rf1 = function(forecast.targets, human.data, mosq.data, weather.data,
   # Split the data set into the forecast year and the historical data
   forecast.year = as.numeric(substr(as.character(weekinquestion), 1, 4))
   
-  forecast.data = my.data[my.data$year == forecast.year, ]
-  historical.data = my.data[my.data$year < forecast.year, ] #**# This will prevent later years from informing hindcasts of earlier years
+  forecast.data = my.data[my.data$YEAR == forecast.year, ]
+  historical.data = my.data[my.data$YEAR < forecast.year, ] #**# This will prevent later years from informing hindcasts of earlier years
   
   #**# How do I go from a MIR to positive district weeks? Isn't the MIR more useful?
   # First question: Could estimate number of trap nights, number of mosquitoes sampled, and then use the infection rate to get an estimate of the number of positive district-weeks.
@@ -542,7 +542,7 @@ FormatDataForRF1 = function(human.data, mosq.data, weekinquestion, weather.data,
   env.data = add.rf1.inputs(env.data, rf1.inputs, breaks)
   
   # Merge on county.year. Keep only records that have mosquito data
-  my.data = merge(md.data, hd.data, by = "county_year") #, all = TRUE
+  my.data = merge(md.data, hd.data, by = "county_year", all.x = TRUE) #, all = TRUE
   
   # Merge to environmental data.
   my.data = merge(my.data, env.data, by = "county_year") # , all = TRUE
@@ -577,12 +577,13 @@ convert.human.data = function(hd, all.counties, all.years){
   #**# The steps creating the year were already done in forecast_NYCT.R and could be required as part of the input.
   hd$year = mapply(substr, hd$date, nchar(as.character(hd$date)) - 3, nchar(as.character(hd$date)))
   hd$year = as.numeric(hd$year)
+  hd$district = as.character(hd$district)
   hd$county_year = sprintf("%s_%s", hd$district, hd$year)
   hd$count = 1 # One case per entry
   hd.data = aggregate(hd$count, by = list(hd$county_year), "sum")
   colnames(hd.data) = c("county_year", "Cases")
-  hd.data$county = sapply(hd.data$county_year, splitter, "_", 1)
-  hd.data$year =  sapply(hd.data$county_year, splitter, "_", 2)
+  hd.data$county = sapply(hd.data$county_year, splitter, "_", 1, 1)
+  hd.data$year =  sapply(hd.data$county_year, splitter, "_", 2, 0)
   
   # Make sure there is a record for every year and county included in the data set
   for (county in all.counties){
@@ -740,19 +741,19 @@ add.rf1.inputs = function(env.data, rf1.inputs, breaks){
   # If other inputs are present, merge them in
   if (length(files.to.add) > 0){
     
-    if(!is.na(files.to.add)){
+    #if(!is.na(files.to.add)){ #**# Removed this check - length check should prevent this from being an issue, and this throws a warning and only checks the first element.
       # Check that files.to.add has same length as merge.type
-      if (length(files.to.add) != length(merge.type.vec)){  stop("files.to.add must have the same number of elements as merge.type.vec")  }
+    if (length(files.to.add) != length(merge.type.vec)){  stop("files.to.add must have the same number of elements as merge.type.vec")  }
+    
+    for (i in 1:length(files.to.add)){
+      # Add covariate information
+      this.file = files.to.add[i]
+      this.merge = merge.type.vec[i]
       
-      for (i in 1:length(files.to.add)){
-        # Add covariate information
-        this.file = files.to.add[i]
-        this.merge = merge.type.vec[i]
-        
-        env.data = add.data(env.data, this.file, this.merge, breaks)
-        env.data = cleanup.garbage(env.data) #**# This step may need modification in the context of the changes made to dfmip
-      }
+      env.data = add.data(env.data, this.file, this.merge, breaks)
+      env.data = cleanup.garbage(env.data) #**# This step may need modification in the context of the changes made to dfmip
     }
+    #}
   }
   
   # If rf1.inputs are NULL, do nothing, and just return the env.data object
