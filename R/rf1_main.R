@@ -741,17 +741,19 @@ add.rf1.inputs = function(env.data, rf1.inputs, breaks){
   # If other inputs are present, merge them in
   if (length(files.to.add) > 0){
     
-    #if(!is.na(files.to.add)){ #**# Removed this check - length check should prevent this from being an issue, and this throws a warning and only checks the first element.
       # Check that files.to.add has same length as merge.type
     if (length(files.to.add) != length(merge.type.vec)){  stop("files.to.add must have the same number of elements as merge.type.vec")  }
     
     for (i in 1:length(files.to.add)){
       # Add covariate information
       this.file = files.to.add[i]
-      this.merge = merge.type.vec[i]
-      
-      env.data = add.data(env.data, this.file, this.merge, breaks)
-      env.data = cleanup.garbage(env.data) #**# This step may need modification in the context of the changes made to dfmip
+      if(!is.na(this.file)){ 
+        
+        this.merge = merge.type.vec[i]
+        
+        env.data = add.data(env.data, this.file, this.merge, breaks)
+        env.data = cleanup.garbage(env.data) #**# This step may need modification in the context of the changes made to dfmip
+      }
     }
     #}
   }

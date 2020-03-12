@@ -158,7 +158,7 @@ test_that("rf1 model final results are correctly formatted for export to dfmip",
 })
 
 # Test DOY.to.day function
-testthat("DOY.to.date function works", {
+test_that("DOY.to.date function works", {
   expect_equal(DOY.to.date(1, 2001), "2001-01-01")
   expect_equal(DOY.to.date(31, 2001), "2001-01-31")
   expect_equal(DOY.to.date(32, 2001), "2001-02-01")
