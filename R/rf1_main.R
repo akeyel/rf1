@@ -1397,7 +1397,7 @@ calculate.MLE.v2 = function(md, temporal.resolution = "annual"){
   md = md[!is.na(md$pool_size), ]
   
   if (virus.nas != 0 | pool.nas != 0){
-    warning("NAs present in the input mosquito data: %s for wnv_result and %s for pool_size. These NA records have been removed from further analysis", virus.nas, pool.nas)
+    warning(sprintf("NAs present in the input mosquito data: %s for wnv_result and %s for pool_size. These NA records have been removed from further analysis", virus.nas, pool.nas))
   }
   
   # Check that expected column names are present, if not, give an informative error
