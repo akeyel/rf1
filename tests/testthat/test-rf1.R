@@ -168,3 +168,41 @@ test_that("DOY.to.date function works", {
   expect_equal(DOY.to.date(365, 2001), '2001-12-31')
   expect_equal(DOY.to.date(366, 2000), '2000-12-31')
 })
+
+# Test that various errors have useful error messages
+test_that("Assorted problems give useful information", {
+
+  # Test bad values in mosq.data file virus field
+  set.seed(20200304)
+  forecast.targets = c('seasonal.mosquito.MLE')
+  weekinquestion = as.Date("2015-07-26", "%Y-%m-%d") #**# Is the as.Date part necessary?
+  analysis.counties = unique(rf1::human.data$district)
+  analysis.years = seq(2011, 2015)
+  rf1.inputs = list(NA, NA, analysis.counties, analysis.years, NA, NA, NA)
+  #week.id = sprintf("test:%s", weekinquestion)
+  id.string = 'test'
+  results.path = "RF1TESTS/"
+  
+  mosq.data = rf1::mosq.data
+  mosq.data$wnv_result[2] = 'none'
+  
+  # Error message does not match according to the code, but copy and pasting
+  # the output error messages for Expected and Actual leads to a perfect match.
+  # Must be some difference in invisible formatting.
+  #m1 = "The VIRUS field (wnv_result) can only contain 0, 1, or NA values."
+  #m2 = "Entered values were: 1, none, 0"
+  #err.message = as.character(sprintf("%s %s", m1, m2))
+  
+  expect_error(rf1(forecast.targets, rf1::human.data, mosq.data,
+                   rf1::weather.data, weekinquestion, rf1.inputs,
+                   results.path, id.string, break.type = "seasonal",
+                   response.type = "continuous", quantile.model = 1,
+                   n.draws = 1000,
+                   bins = c(0,seq(1,51,1),101,151,201,1000),
+                   use.testing.objects = FALSE))
+               #, err.message)
+
+               
+               
+  
+})

@@ -1390,6 +1390,16 @@ spatial.temporal.barplots = function(temporal.accuracy, spatial.accuracy, spatia
 #' @export calculate.MLE.v2
 calculate.MLE.v2 = function(md, temporal.resolution = "annual"){
   
+  # Remove any NA rows from the calculations, report their presence to the user
+  virus.nas = length(is.na(md$wnv_result))
+  pool.nas = length(is.na(md$pool_size))
+  md = md[!is.na(md$wnv_result), ]
+  md = md[!is.na(md$pool_size), ]
+  
+  if (virus.nas != 0 | pool.nas != 0){
+    warning("NAs present in the input mosquito data: %s for wnv_result and %s for pool_size. These NA records have been removed from further analysis", virus.nas, pool.nas)
+  }
+  
   # Check that expected column names are present, if not, give an informative error
   expected.names = c('district', "col_date", "wnv_result", "pool_size") #'species' is not actually required at this point
   is.error = 0
@@ -1427,6 +1437,24 @@ calculate.MLE.v2 = function(md, temporal.resolution = "annual"){
   
   md$VIRUS = md$wnv_result
   md$wnv_result = NULL # Prevent an overabundance of redundant fields
+  
+  # Check that VIRUS field has only positives, negatives, and NA values
+  md.positives = md$VIRUS[md$VIRUS == 1] 
+  md.negatives = md$VIRUS[md$VIRUS == 0]
+  #md.nas = md$VIRUS[is.na(md$VIRUS)]
+  md.check = length(md.positives) + length(md.negatives) # + length(md.nas)
+  #message(md.check)
+  #message(length(md.positives))
+  #message(length(md.negatives))
+  #message(length(md.nas))
+  #message(nrow(md))
+  if (md.check != nrow(md)){
+    m1 = "The VIRUS field (wnv_result) can only contain 0, 1, or NA values."
+    m2 = sprintf("Entered values were: %s", paste(unique(md$VIRUS), collapse = ', '))
+    m3 = sprintf("There were %s positive pools, %s negative pools, and %s pools total")
+    m4 = sprintf("Thus %s pools are missing, as there should be %s pools", (nrow(md) - md.check), nrow(md))
+    stop(sprintf("%s %s %s %s", m1, m2, m3, m4))
+  }
   
   if (length(md$pool_size) == 0){
     stop("A field with mosquito pool sizes must be present, and must be labeled 'pool_size'")
