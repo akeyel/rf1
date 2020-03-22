@@ -218,7 +218,7 @@ rf1 = function(forecast.targets, human.data, mosq.data, weather.data,
     statewide.distribution = c('annual.human.cases', sprintf("%s-STATEWIDE", id.string), statewide.prediction) 
     names(statewide.distribution) =  c('forecast.target', 'district', sprintf("DRAW%s", seq(1,n.draws)))
     RF1.distributions = rbind(RF1.distributions, statewide.distribution)
-    
+
     # Update forecast bins
     #**# NOT SCRIPTED
     
@@ -228,7 +228,7 @@ rf1 = function(forecast.targets, human.data, mosq.data, weather.data,
   RF1.results = RF1.results[2:nrow(RF1.results), ]
   RF1.distributions = RF1.distributions[2:nrow(RF1.distributions), ]
   #RF1.bins = RF1.bins[2:nrow(RF1.bins), ]
-  
+
   # Check that fields come out as appropriate format
   RF1.results$value = as.numeric(as.character(RF1.results$value))
   for (i in 1:n.draws){

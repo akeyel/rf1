@@ -202,7 +202,14 @@ test_that("Assorted problems give useful information", {
                    use.testing.objects = FALSE))
                #, err.message)
 
-               
-               
-  
 })
+
+# # Test that RF1 model correctly handles districts with no human cases included in the analysis are handled properly.
+# test_that("Districts missing human cases are handled properly", {
+#   
+#   # Test when all districts have values, a correct output is generated
+#   stop("Unit test not scripted")
+#   
+#   # Test when one or more districts have no human cases, a correct output is generated
+#   stop("Unit test not scripted")
+# })
