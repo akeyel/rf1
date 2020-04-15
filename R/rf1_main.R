@@ -521,9 +521,12 @@ do.rf = function(trap.data, dep.var, independent.vars, results.path, do.spatial 
 #'
 FormatDataForRF1 = function(human.data, mosq.data, weekinquestion, weather.data, rf1.inputs, results.path, break.type){
   
-  # Need to convert mosquito data into mosquito infection rates (uses MLE code, which is not mine. Need to wait for response from Moffit. Perhaps a phone call? If no email response.)
-  temporal.resolution = "annual"
-  md.data = calculate.MLE.v2(mosq.data, temporal.resolution)
+  # If it is NA or any other single entry, do not process the mosquito data
+  if (length(mosq.data) != 1){
+    # Need to convert mosquito data into mosquito infection rates (uses MLE code, which is not mine. Need to wait for response from Moffit. Perhaps a phone call? If no email response.)
+    temporal.resolution = "annual"
+    md.data = calculate.MLE.v2(mosq.data, temporal.resolution)
+  }
   
   # Need to convert human data to cases per county per year, and add 0's for county years without cases
   all.counties = rf1.inputs[[3]] # Get list of counties
@@ -536,13 +539,26 @@ FormatDataForRF1 = function(human.data, mosq.data, weekinquestion, weather.data,
   breaks = assign.breaks(weekinquestion, break.type)
   
   # Need to aggregate the climate data by season & merge with static.data
-  env.data = convert.env.data(weather.data, all.counties, breaks) #**# Could save this for faster re-use. How should I do that?
-  #**# Watch for problem where county_year contains lower-case entries, while district has been converted to upper case for merging purposes.
+  # Only process if weather.data is not NA
+  if (length(weather.data) != 1){
+    env.data = convert.env.data(weather.data, all.counties, breaks) #**# Could save this for faster re-use. How should I do that?
+    #**# Watch for problem where county_year contains lower-case entries, while district has been converted to upper case for merging purposes.
+  }else{
+    #**# Watch input field names. These will need to be standardized, and the standardized names listed in the documentation
+    # Otherwise, initialize an empty env.data with only the county_year, county, and year fields
+    in.counties = rep(all.counties, length(all.years))
+    in.years = sort(rep(all.years, length(all.counties)))
+    env.data = data.frame(district = in.counties, year = in.years, county_year = sprintf("%s_%s", in.counties, in.years))
+  }
   
   env.data = add.rf1.inputs(env.data, rf1.inputs, breaks)
   
-  # Merge on county.year. Keep only records that have mosquito data
-  my.data = merge(md.data, hd.data, by = "county_year", all.x = TRUE) #, all = TRUE
+  
+  if (length(mosq.data) == 1){  my.data = hd.data
+  }else{
+    # Merge on county.year. Keep only records that have mosquito data
+    my.data = merge(md.data, hd.data, by = "county_year", all.x = TRUE) #, all = TRUE
+  }
   
   # Merge to environmental data.
   my.data = merge(my.data, env.data, by = "county_year") # , all = TRUE
@@ -735,8 +751,8 @@ add.rf1.inputs = function(env.data, rf1.inputs, breaks){
   # unpack rf1.inputs
   files.to.add = rf1.inputs[[1]]
   merge.type.vec = rf1.inputs[[2]]
-  
-  # env.data will be coming in with a district and year field. For now, use consistent terminology
+
+  # env.data will be coming in with location_year, location, and year fields. Goal is to use consistent terminology
   
   # If other inputs are present, merge them in
   if (length(files.to.add) > 0){
@@ -745,6 +761,7 @@ add.rf1.inputs = function(env.data, rf1.inputs, breaks){
     if (length(files.to.add) != length(merge.type.vec)){  stop("files.to.add must have the same number of elements as merge.type.vec")  }
     
     for (i in 1:length(files.to.add)){
+      
       # Add covariate information
       this.file = files.to.add[i]
       if(!is.na(this.file)){ 
@@ -810,14 +827,19 @@ cleanup.garbage = function(rs.data){
 #'
 add.data = function(rs.data, this.file, this.merge, breaks){
 
-  #**# do I need the field renames, or does the cleanup.garbage step adequately address these issues?
-  #**# If it doesn't, can I move these corrections there, and streamline this function?
+  # If a file, load the file. If an R data object, merge the data object
+  if (typeof(this.file) == 'character'){
+    these.data = read.csv(this.file)
+  }else{ these.data = this.file }
   
-  
-  these.data = read.csv(this.file)
-  
+  # Merge by location and year
   if (this.merge == "spatial_temporal"){
     
+    if (length(these.data$location_year) == 0){
+      #**# ideally the stop will be in the external loop, and will give information about which data set is missing the required field
+      #**# or we can add an rf1.inputs check tool that just checks this stuff right off the bat in the model
+      stop("location_year field is missing from one or more of the spatail_temporal merge input data sets")
+    }
     
     # Format for my climate and anomaly data was variable_break. As this is being done for a specific forecast day, we need to drop any that exceed the forecast day
     # Drop any fields that have a numeric ending beyond the last break
@@ -846,10 +868,11 @@ add.data = function(rs.data, this.file, this.merge, breaks){
     
     keep.vars = these.names[keep.vec] #NOTE: 0 and 1 do not seem to work here.
     
-    these.data$county_year = these.data$COUNTY_YEAR
-    rs.data = merge(rs.data, these.data, by = "county_year")
+    #these.data$county_year = these.data$COUNTY_YEAR
+    rs.data = merge(rs.data, these.data, by = "location_year")
   }
   
+  # Merge by unit and year. Needs updating, but currently only BBS would be applicable here, and the county-scale merge could be done separately
   if (this.merge == "state_temporal"){
     stop("Need to add state as an input to the rf1 function")
     # Merge by State and year
@@ -857,12 +880,22 @@ add.data = function(rs.data, this.file, this.merge, breaks){
     rs.data = merge(rs.data, these.data, by = "STATE_YEAR") #, all.x = TRUE)
   }
   
+  # Merge by location only
   if (this.merge == "spatial"){
-    # Merge by spatial unit - no temporal resolution
-    these.data$district = toupper(these.data$SPATIAL) # Ensure data is upper-case for proper join
-    these.data$SPATIAL = NULL # Remove this field, otherwise it will later get converted to a SPATIAL.x if more than one gets merged. Can always re-assign from district if it is needed later
     
-    rs.data = merge(rs.data, these.data, by = "district")
+    # check that location field is present
+    if (length(these.data$location) == 0){
+      #**# ideally the stop will be in the external loop, and will give information about which data set is missing the required field
+      #**# or we can add an rf1.inputs check tool that just checks this stuff right off the bat in the model
+      stop("location_year field is missing from one or more of the spatail_temporal merge input data sets")
+    }
+    
+    
+    # Merge by spatial unit - no temporal resolution
+    #these.data$district = toupper(these.data$SPATIAL) # Ensure data is upper-case for proper join
+    #these.data$SPATIAL = NULL # Remove this field, otherwise it will later get converted to a SPATIAL.x if more than one gets merged. Can always re-assign from district if it is needed later
+    
+    rs.data = merge(rs.data, these.data, by = "location")
   }
   
   return(rs.data)
