@@ -7,8 +7,8 @@
 do.rf(trap.data, dep.var, independent.vars, results.path, do.spatial = 0,
   create.ci.null = 0, label = "", response.type = "continuous",
   exploratory = TRUE, input.seed = 20180830, temporal.field = "year",
-  spatial.field = "district", quantile.model = 1,
-  display.messages = 0)
+  spatial.field = "location", quantile.model = 1,
+  display.messages = 1)
 }
 \arguments{
 \item{trap.data}{A data frame containing human cases, mosquito infection rate (if applicable),

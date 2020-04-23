@@ -4,9 +4,9 @@
 \alias{rf1.inputs}
 \title{rf1.inputs}
 \arguments{
-\item{files.to.add}{A vector of file names of other data sources to be
+\item{files.to.add}{A list of file names of other data sources to be
 included in the Random Forest model. If no additional data is to be added,
-this should be an empty vector (i.e. c()) or NA.}
+this should be an empty list (i.e. list()) or NA.}
 
 \item{merge.type.vec}{A vector identifying how the files should be joined to
 the mosquito and human data. Options are spatial_temporal where merges will

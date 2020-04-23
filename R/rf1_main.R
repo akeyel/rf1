@@ -89,9 +89,20 @@ rf1 = function(forecast.targets, human.data, mosq.data, weather.data,
   # Split the data set into the forecast year and the historical data
   forecast.year = as.numeric(substr(as.character(weekinquestion), 1, 4))
   
-  forecast.data = my.data[my.data$YEAR == forecast.year, ]
-  historical.data = my.data[my.data$YEAR < forecast.year, ] #**# This will prevent later years from informing hindcasts of earlier years
+  forecast.data = my.data[my.data$year == forecast.year, ]
+  historical.data = my.data[my.data$year < forecast.year, ] #**# This will prevent later years from informing hindcasts of earlier years
+
+  message(sprintf("nrow(historical.data) = %s", nrow(historical.data)))
+  #message(paste(colnames(my.data), collapse = ', '))
+  message("Independent Vars:")
+  message(paste(independent.vars, collapse = ', '))
   
+  #message(sprintf("Forecast data rows: %s", nrow(forecast.data)))
+  #message(forecast.year)
+  if (nrow(forecast.data) == 0){ stop(sprintf("Forecast subset has no data for forecast year %s. Please ensure that all temporally-merged data sets reach the final year.", forecast.year))}
+  #stop("Need to fix stuff, maybe")
+  
+    
   #**# How do I go from a MIR to positive district weeks? Isn't the MIR more useful?
   # First question: Could estimate number of trap nights, number of mosquitoes sampled, and then use the infection rate to get an estimate of the number of positive district-weeks.
   # For second question - does seem like a lot of work to get at a number that tells us what? In ArboMAP it is used to estimate human cases, but we do that directly.
@@ -99,8 +110,8 @@ rf1 = function(forecast.targets, human.data, mosq.data, weather.data,
   annual.positive.district.weeks = NA
 
   # Create output objects
-  RF1.results = data.frame(forecast.target = NA, district = NA, value = NA)
-  RF1.distributions = data.frame(forecast.target = NA, district = NA)
+  RF1.results = data.frame(forecast.target = NA, location = NA, value = NA)
+  RF1.distributions = data.frame(forecast.target = NA, location = NA)
   for (i in 1:n.draws){
     new.col = sprintf("DRAW%s", i)
     RF1.distributions[[new.col]] = NA}
@@ -144,23 +155,23 @@ rf1 = function(forecast.targets, human.data, mosq.data, weather.data,
       dist.predictions = matrix(dist.predictions, ncol = n.draws) #**# Confirm the order is correct on this. Should be - should fill by column first.
     }
     
-    districts = forecast.data$COUNTY
+    locations = forecast.data$location
     targets = rep('seasonal.mosquito.MLE', length(predictions))
-    mosq.records = data.frame(forecast.target = targets, district = districts, value = predictions)
+    mosq.records = data.frame(forecast.target = targets, location = locations, value = predictions)
     RF1.results = rbind(RF1.results, mosq.records)
 
     # Add statewide result
-    seasonal.mosquito.MLE = mean(predictions, na.rm = TRUE) #**# NOTE: perhaps districts should be weighted in this estimate
+    seasonal.mosquito.MLE = mean(predictions, na.rm = TRUE) #**# NOTE: perhaps locations should be weighted in this estimate
     statewide.record = c('seasonal.mosquito.MLE', sprintf("%s-STATEWIDE", id.string), seasonal.mosquito.MLE)
     RF1.results = rbind(RF1.results, statewide.record)
     
     # Update RF1.distributions & add statewide result
-    mosq.distributions = cbind(targets, districts, dist.predictions)
-    colnames(mosq.distributions) = c('forecast.target', 'district', sprintf("DRAW%s", seq(1,n.draws)))
+    mosq.distributions = cbind(targets, locations, dist.predictions)
+    colnames(mosq.distributions) = c('forecast.target', 'location', sprintf("DRAW%s", seq(1,n.draws)))
     RF1.distributions = rbind(RF1.distributions, mosq.distributions)
     statewide.prediction = apply(dist.predictions, c(2), mean, na.rm = TRUE) # Should take average MLE across all counties. #**# Has some obvious statistical issues, but not sure how else to do it.
     statewide.distribution = c('seasonal.mosquito.MLE', sprintf("%s-STATEWIDE", id.string), statewide.prediction) 
-    names(statewide.distribution) =  c('forecast.target', 'district', sprintf("DRAW%s", seq(1,n.draws)))
+    names(statewide.distribution) =  c('forecast.target', 'location', sprintf("DRAW%s", seq(1,n.draws)))
     RF1.distributions = rbind(RF1.distributions, statewide.distribution)
         
     # Update RF1.bins
@@ -201,9 +212,9 @@ rf1 = function(forecast.targets, human.data, mosq.data, weather.data,
       dist.predictions = matrix(dist.predictions, ncol = n.draws) #**# Confirm correct matrix formation
     }
 
-    districts = forecast.data$COUNTY
+    locations = forecast.data$location
     targets = rep('annual.human.cases', length(predictions))
-    human.records = data.frame(forecast.target = targets, district = districts, value = predictions)
+    human.records = data.frame(forecast.target = targets, location = locations, value = predictions)
     RF1.results = rbind(RF1.results, human.records)
     
     statewide.cases = sum(predictions)
@@ -211,12 +222,12 @@ rf1 = function(forecast.targets, human.data, mosq.data, weather.data,
     RF1.results = rbind(RF1.results, statewide.record)
     
     # Update forecast distributions
-    human.distributions = cbind(targets, districts, dist.predictions)
-    colnames(human.distributions) = c('forecast.target', 'district', sprintf("DRAW%s", seq(1,n.draws)))
+    human.distributions = cbind(targets, locations, dist.predictions)
+    colnames(human.distributions) = c('forecast.target', 'location', sprintf("DRAW%s", seq(1,n.draws)))
     RF1.distributions = rbind(RF1.distributions, human.distributions)
     statewide.prediction = apply(dist.predictions, c(2), sum, na.rm = TRUE) # Should take average MLE across all counties. #**# Has some obvious statistical issues, but not sure how else to do it.
     statewide.distribution = c('annual.human.cases', sprintf("%s-STATEWIDE", id.string), statewide.prediction) 
-    names(statewide.distribution) =  c('forecast.target', 'district', sprintf("DRAW%s", seq(1,n.draws)))
+    names(statewide.distribution) =  c('forecast.target', 'location', sprintf("DRAW%s", seq(1,n.draws)))
     RF1.distributions = rbind(RF1.distributions, statewide.distribution)
 
     # Update forecast bins
@@ -251,9 +262,9 @@ rf1 = function(forecast.targets, human.data, mosq.data, weather.data,
 #'
 #' The model-specific inputs required to run the RF1 model
 #'
-#' @param files.to.add A vector of file names of other data sources to be
+#' @param files.to.add A list of file names of other data sources to be
 #' included in the Random Forest model. If no additional data is to be added,
-#' this should be an empty vector (i.e. c()) or NA.
+#' this should be an empty list (i.e. list()) or NA.
 #' @param merge.type.vec A vector identifying how the files should be joined to
 #' the mosquito and human data. Options are spatial_temporal where merges will
 #' be performed on county and year (e.g., climate data); state_temporal where
@@ -353,8 +364,8 @@ NULL
 #'
 do.rf = function(trap.data, dep.var, independent.vars, results.path, do.spatial = 0,
                  create.ci.null = 0, label = "", response.type = "continuous", exploratory = TRUE,
-                 input.seed = 20180830, temporal.field = "year", spatial.field = "district",
-                 quantile.model = 1, display.messages = 0){
+                 input.seed = 20180830, temporal.field = "year", spatial.field = "location",
+                 quantile.model = 1, display.messages = 1){
   
   #require(psych)
   
@@ -364,11 +375,15 @@ do.rf = function(trap.data, dep.var, independent.vars, results.path, do.spatial 
   # Reset the seed to ensure that the random elements in the code are repeataable
   set.seed(input.seed)
   
+  message(nrow(trap.data))
+  message(dep.var)
+  message(names(trap.data))
+  
   # Subset data to just non-NA values
   trap.data = trap.data[!is.na(trap.data[[dep.var]]), ]
   
   # Add MERGE_ID #**# FIX THIS TO BE MORE GENERAL / MORE ROBUST
-  trap.data$MERGE_ID = trap.data$county_year
+  trap.data$MERGE_ID = trap.data$location_year
   
   #**# Also formally output these somewhere  Report after test data set is removed
   # Report sample size
@@ -386,11 +401,15 @@ do.rf = function(trap.data, dep.var, independent.vars, results.path, do.spatial 
   if (response.type == "continuous"){ trap.data[[dep.var]] = as.numeric(as.character(trap.data[[dep.var]])) }
   if (response.type == "binary"){ trap.data[[dep.var]] = as.factor(trap.data[[dep.var]]) }
   
+  message(nrow(trap.data))
+  message(paste(independent.vars, collapse = ', '))
+  
   ### EXAMINE PREDICTORS FOR COLLINEARITY
   # Run for Everything #**# Put someplace that makes more sense
   correlation.path = sprintf("%s/ModelResults/correlations", results.path)
   dir.create(correlation.path, showWarnings = FALSE, recursive = TRUE)
   tiff(filename = sprintf("%s/pairspanel_%s.tif", correlation.path, label), height = 3000, width = 3000)
+  #message(paste(independent.vars, collapse = ', '))
   psych::pairs.panels(trap.data[ , independent.vars])
   dev.off()
   
@@ -526,6 +545,7 @@ FormatDataForRF1 = function(human.data, mosq.data, weekinquestion, weather.data,
     # Need to convert mosquito data into mosquito infection rates (uses MLE code, which is not mine. Need to wait for response from Moffit. Perhaps a phone call? If no email response.)
     temporal.resolution = "annual"
     md.data = calculate.MLE.v2(mosq.data, temporal.resolution)
+    # Switch to a location_year naming convention
   }
   
   # Need to convert human data to cases per county per year, and add 0's for county years without cases
@@ -535,34 +555,41 @@ FormatDataForRF1 = function(human.data, mosq.data, weekinquestion, weather.data,
   if (typeof(human.data) == "character"){  human.data = read.csv(human.data)  }
   
   hd.data = convert.human.data(human.data, all.counties, all.years)
-  
+  #message(max(hd.data$year, na.rm = TRUE))
+  #message(weekinquestion)
+  #message(break.type)
   breaks = assign.breaks(weekinquestion, break.type)
+  #message(paste(breaks, collapse = ", "))
   
   # Need to aggregate the climate data by season & merge with static.data
   # Only process if weather.data is not NA
   if (length(weather.data) != 1){
     env.data = convert.env.data(weather.data, all.counties, breaks) #**# Could save this for faster re-use. How should I do that?
-    #**# Watch for problem where county_year contains lower-case entries, while district has been converted to upper case for merging purposes.
+    #**# Watch for problem where location_year contains lower-case entries, while district has been converted to upper case for merging purposes.
   }else{
     #**# Watch input field names. These will need to be standardized, and the standardized names listed in the documentation
-    # Otherwise, initialize an empty env.data with only the county_year, county, and year fields
+    # Otherwise, initialize an empty env.data with only the location_year, county, and year fields
     in.counties = rep(all.counties, length(all.years))
     in.years = sort(rep(all.years, length(all.counties)))
-    env.data = data.frame(district = in.counties, year = in.years, county_year = sprintf("%s_%s", in.counties, in.years))
+    env.data = data.frame(location = in.counties, year = in.years, location_year = sprintf("%s_%s", in.counties, in.years))
   }
   
-  env.data = add.rf1.inputs(env.data, rf1.inputs, breaks)
+  #message(max(env.data$year))
   
+  env.data = add.rf1.inputs(env.data, rf1.inputs, breaks)
+  #message(max(env.data$year))
   
   if (length(mosq.data) == 1){  my.data = hd.data
   }else{
     # Merge on county.year. Keep only records that have mosquito data
-    my.data = merge(md.data, hd.data, by = "county_year", all.x = TRUE) #, all = TRUE
+    my.data = merge(md.data, hd.data, by = "location_year", all.x = TRUE) #, all = TRUE
   }
   
   # Merge to environmental data.
-  my.data = merge(my.data, env.data, by = "county_year") # , all = TRUE
+  my.data = merge(my.data, env.data, by = "location_year") # , all = TRUE
   my.data = cleanup.garbage(my.data)
+  
+  #message(max(my.data$year))
   
   # Pull independent variable names from the climate data. Add those from the mosquito data
   independent.vars = colnames(my.data)
@@ -571,13 +598,23 @@ FormatDataForRF1 = function(human.data, mosq.data, weekinquestion, weather.data,
   
   # Remove non-analysis variables #**# This needs an upgrade to allow a user input and user control!
   user.drop.vars = rf1.inputs[[5]]
-  drop.vars = c(user.drop.vars, "county_year", "GROUP", "CI.lower", "CI.upper", "COUNTY", "Cases", "YEAR", "year", "county", "district", "breaks") #**# I have a names problem! Should really clean up the name usage!
+  drop.vars = c(user.drop.vars, "location_year", "GROUP", "CI.lower", "CI.upper", "COUNTY", "Cases", "YEAR", "year", "county", "district", "breaks", "location") #**# I have a names problem! Should really clean up the name usage!
   
   for (drop.var in drop.vars){
     if (drop.var %in% independent.vars){
       independent.vars = independent.vars[independent.vars != drop.var]
     }
   }
+  
+  # Ensure variables come out as numeric, unless they are specified as factors
+  for (var in (independent.vars)){
+    # If it is not a factor, ensure it is 
+    if (!typeof(my.data[[var]]) == 'factor'){
+      my.data[[var]] = as.numeric(as.character(my.data[[var]]))
+    }
+  }
+  
+  #message(max(my.data$year))
   
   out = list(my.data, independent.vars)
   return(out)
@@ -594,21 +631,21 @@ convert.human.data = function(hd, all.counties, all.years){
   hd$year = mapply(substr, hd$date, nchar(as.character(hd$date)) - 3, nchar(as.character(hd$date)))
   hd$year = as.numeric(hd$year)
   hd$district = as.character(hd$district)
-  hd$county_year = sprintf("%s_%s", hd$district, hd$year)
+  hd$location_year = sprintf("%s_%s", hd$district, hd$year)
   hd$count = 1 # One case per entry
-  hd.data = aggregate(hd$count, by = list(hd$county_year), "sum")
-  colnames(hd.data) = c("county_year", "Cases")
-  hd.data$county = sapply(hd.data$county_year, splitter, "_", 1, 1)
-  hd.data$year =  sapply(hd.data$county_year, splitter, "_", 2, 0)
+  hd.data = aggregate(hd$count, by = list(hd$location_year), "sum")
+  colnames(hd.data) = c("location_year", "Cases")
+  hd.data$location = sapply(hd.data$location_year, splitter, "_", 1, 1)
+  hd.data$year =  sapply(hd.data$location_year, splitter, "_", 2, 0)
   
   # Make sure there is a record for every year and county included in the data set
   for (county in all.counties){
     for (year in all.years){
-      county_year = sprintf("%s_%s", county, year)
-      if (!county_year %in% hd.data$county_year){
-        # Add 0 cases for missing county_years
+      location_year = sprintf("%s_%s", county, year)
+      if (!location_year %in% hd.data$location_year){
+        # Add 0 cases for missing location_years
         #test.type(c(county_year, 0, county, year), 'L1480')
-        hd.data = rbind(hd.data, c(county_year, 0, county, year))
+        hd.data = rbind(hd.data, c(location_year, 0, county, year))
       }
     }
   }
@@ -664,19 +701,19 @@ convert.env.data = function(weather.data, all.counties, season.breaks){
   
   # Add grouping factor based on day of year
   weather.data$wbreaks = sapply(weather.data$doy, assign.groups, season.breaks)
-  weather.data$county_year = sprintf("%s_%s", weather.data$district, weather.data$year)
+  weather.data$location_year = sprintf("%s_%s", weather.data$district, weather.data$year)
   
   # This looks like a job for dplyr; https://datacarpentry.org/dc_zurich/R-ecology/04-dplyr
   #**# This is hard-coded to specific variables. Can dplyr take a more general input?
   env.data.pre = weather.data %>%
-    dplyr::group_by(county_year, wbreaks) %>%
+    dplyr::group_by(location_year, wbreaks) %>%
     dplyr::summarize(TMINC = mean(tminc), TMEANC = mean(tmeanc), TMAXC = mean(tmaxc), PR = mean(pr),
                      RMEAN = mean(rmean), VPD = mean(vpd))
   
   
   #**# May be a better way to do this - this is not optimized for speed
   # Reformat env.data to have a separate column per break
-  env.data = data.frame(county_year = unique(env.data.pre$county_year))
+  env.data = data.frame(location_year = unique(env.data.pre$location_year))
   
   # Add variables to the env.data data frame
   vars = c("TMINC", "TMEANC", "TMAXC", "PR", "RMEAN", "VPD") #**# HARD CODED, BECAUSE dplyr step is hard coded
@@ -689,18 +726,18 @@ convert.env.data = function(weather.data, all.counties, season.breaks){
       env.data.subset = env.data.pre[env.data.pre$wbreaks == b, ]
       # Loop through subset and extract break values for this variable
       for (i in 1:nrow(env.data.subset)){
-        county_year = env.data.subset$county_year[i]
-        this.value = env.data.subset[[var]][env.data.subset$county_year == county_year]
-        env.data[[this.var]][env.data$county_year == county_year] = this.value
+        location_year = env.data.subset$location_year[i]
+        this.value = env.data.subset[[var]][env.data.subset$location_year == location_year]
+        env.data[[this.var]][env.data$location_year == location_year] = this.value
       }
     }
   }
   
-  env.data$county_year = as.character(env.data$county_year) # Somehow this was turning into a factor (!)
-  env.data$district = sapply(env.data$county_year, splitter, "_", 1, 1)
-  env.data$year = sapply(env.data$county_year, splitter, "_", 2, 0)
+  env.data$location_year = as.character(env.data$location_year) # Somehow this was turning into a factor (!)
+  env.data$location = sapply(env.data$location_year, splitter, "_", 1, 1)
+  env.data$year = sapply(env.data$location_year, splitter, "_", 2, 0)
   
-  env.data$district = toupper(env.data$district)
+  env.data$location = toupper(env.data$location) #**# Is this going to break things badly?
   
   return(env.data)
 }
@@ -741,7 +778,7 @@ assign.groups = function(doy, breaks){
 #' Modified from the add.other function in wnv_hlpr.R
 #'
 #' @param env.data The environmental data object
-#' @param files.to.add A vector containing the full paths for .csv files to merge into the env.data object
+#' @param files.to.add A list containing the full paths for .csv files or the data objects to merge into the env.data object
 #' @param merge.type.vec A vector containing the merge type for each of the files to be added
 #'
 #' @noRd
@@ -763,8 +800,15 @@ add.rf1.inputs = function(env.data, rf1.inputs, breaks){
     for (i in 1:length(files.to.add)){
       
       # Add covariate information
-      this.file = files.to.add[i]
-      if(!is.na(this.file)){ 
+      this.file = files.to.add[[i]]
+      
+      run.file = 1
+      # Check if it is NA # More complicated because this.file could be a data set with length > 1, and is.na() just checks first element and makes R cranky
+      if (length(this.file) == 1){
+        if (is.na(this.file)){ run.file = 0 }
+      }
+      
+      if(run.file == 1){ 
         
         this.merge = merge.type.vec[i]
         
@@ -803,10 +847,10 @@ cleanup.garbage = function(rs.data){
   #  rs.data$TEMPORAL.y = NULL
   #}
   
-  if (length(rs.data$district) == 0){
-    rs.data$district = rs.data$district.x
-    rs.data$district.x = NULL
-    rs.data$district.y = NULL
+  if (length(rs.data$location) == 0){
+    rs.data$location = rs.data$location.x
+    rs.data$location.x = NULL
+    rs.data$location.y = NULL
   }
   
   return(rs.data)
@@ -827,6 +871,8 @@ cleanup.garbage = function(rs.data){
 #'
 add.data = function(rs.data, this.file, this.merge, breaks){
 
+  n.breaks = length(breaks)
+  
   # If a file, load the file. If an R data object, merge the data object
   if (typeof(this.file) == 'character'){
     these.data = read.csv(this.file)
@@ -841,32 +887,32 @@ add.data = function(rs.data, this.file, this.merge, breaks){
       stop("location_year field is missing from one or more of the spatail_temporal merge input data sets")
     }
     
-    # Format for my climate and anomaly data was variable_break. As this is being done for a specific forecast day, we need to drop any that exceed the forecast day
-    # Drop any fields that have a numeric ending beyond the last break
-    these.names = colnames(these.data)
-    keep.vec = c()
-    #**# This is a tricky split, as the variable names might have variable numbers of "_", but if we ever move past seasons to months, this will require a double-digit extraction
-    
-    if (max(breaks) < 10){
-      # For now, do the simple approach and assume a single-digit extraction
-      for (name in these.names){
-        keep = FALSE
-        # Just get last digit
-        season = as.numeric(as.character(substr(name,length(name) - 1, length(name))))
-        
-        # Only apply exclusion if this variable corresponds to a season (i.e. ends in a number)
-        if (season %in% seq(1,9)){
-          if (season > max(breaks)){
-            keep = TRUE
-          }
-        }
-        keep.vec = c(keep.vec, keep)
-      }
-    }
-    
-    if (max(breaks) > 9){ stop("Need to upgrade the add.data function to handle more than 9 breaks")  }
-    
-    keep.vars = these.names[keep.vec] #NOTE: 0 and 1 do not seem to work here.
+    # # Format for my climate and anomaly data was variable_break. As this is being done for a specific forecast day, we need to drop any that exceed the forecast day
+    # # Drop any fields that have a numeric ending beyond the last break
+    # these.names = colnames(these.data)
+    # keep.vec = c()
+    # #**# This is a tricky split, as the variable names might have variable numbers of "_", but if we ever move past seasons to months, this will require a double-digit extraction
+    # 
+    # if (n.breaks < 10){
+    #   # For now, do the simple approach and assume a single-digit extraction
+    #   for (name in these.names){
+    #     keep = FALSE
+    #     # Just get last digit
+    #     season = as.numeric(as.character(substr(name,length(name) - 1, length(name))))
+    #     
+    #     # Only keep if this variable corresponds to a season (i.e. ends in a number)
+    #     if (season %in% seq(1,9)){
+    #       if (season < n.breaks){
+    #         keep = TRUE
+    #       }
+    #     }
+    #     keep.vec = c(keep.vec, keep)
+    #   }
+    # }
+    # 
+    # if (max(breaks) > 9){ stop("Need to upgrade the add.data function to handle more than 9 breaks")  }
+    # 
+    # keep.vars = these.names[keep.vec] #NOTE: 0 and 1 do not seem to work here.
     
     #these.data$county_year = these.data$COUNTY_YEAR
     rs.data = merge(rs.data, these.data, by = "location_year")
@@ -887,7 +933,7 @@ add.data = function(rs.data, this.file, this.merge, breaks){
     if (length(these.data$location) == 0){
       #**# ideally the stop will be in the external loop, and will give information about which data set is missing the required field
       #**# or we can add an rf1.inputs check tool that just checks this stuff right off the bat in the model
-      stop("location_year field is missing from one or more of the spatail_temporal merge input data sets")
+      stop("location_year field is missing from one or more of the spatial_temporal merge input data sets")
     }
     
     
@@ -897,6 +943,8 @@ add.data = function(rs.data, this.file, this.merge, breaks){
     
     rs.data = merge(rs.data, these.data, by = "location")
   }
+  
+  #message(sprintf("Joined. Max year is %s. Max data year is %s", max(rs.data$year), max(these.data$year)))
   
   return(rs.data)
 }
@@ -1572,10 +1620,10 @@ calculate.MLE.v2 = function(md, temporal.resolution = "annual"){
     md.data$COUNTY[i] = county
     
     # Ensure there is a clearly delineated year field. Adjust as appropriate for other temporal resolutions
-    if (temporal.resolution == "annual") { md.data$YEAR[i] = this.year }
+    if (temporal.resolution == "annual") { md.data$year[i] = this.year }
   } # END OF LOOP OVER GROUPS
   
-  md.data$county_year = sprintf("%s_%s", md.data$COUNTY, md.data$YEAR)
+  md.data$location_year = sprintf("%s_%s", md.data$COUNTY, md.data$year)
   
   return(md.data)
 }
