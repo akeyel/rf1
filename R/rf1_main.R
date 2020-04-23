@@ -409,7 +409,7 @@ do.rf = function(trap.data, dep.var, independent.vars, results.path, do.spatial 
   correlation.path = sprintf("%s/ModelResults/correlations", results.path)
   dir.create(correlation.path, showWarnings = FALSE, recursive = TRUE)
   tiff(filename = sprintf("%s/pairspanel_%s.tif", correlation.path, label), height = 3000, width = 3000)
-  #message(paste(independent.vars, collapse = ', '))
+  message(paste(independent.vars, collapse = ', '))
   psych::pairs.panels(trap.data[ , independent.vars])
   dev.off()
   
@@ -554,12 +554,12 @@ FormatDataForRF1 = function(human.data, mosq.data, weekinquestion, weather.data,
   }
   
   # Need to convert human data to cases per county per year, and add 0's for county years without cases
-  all.counties = rf1.inputs[[3]] # Get list of counties
+  all.locations = rf1.inputs[[3]] # Get list of counties
   all.years = rf1.inputs[[4]] # Get list of all years of analysis
   # Ensure human data is in data frame format, and not just a file name
   if (typeof(human.data) == "character"){  human.data = read.csv(human.data)  }
   
-  hd.data = convert.human.data(human.data, all.counties, all.years)
+  hd.data = convert.human.data(human.data, all.locations, all.years)
   #message(max(hd.data$year, na.rm = TRUE))
   #message(weekinquestion)
   #message(break.type)
@@ -570,13 +570,13 @@ FormatDataForRF1 = function(human.data, mosq.data, weekinquestion, weather.data,
   # Only process if weather.data is not NA
   if (length(weather.data) != 1){
     weather.data = district.to.location(weather.data)
-    env.data = convert.env.data(weather.data, all.counties, breaks) #**# Could save this for faster re-use. How should I do that?
+    env.data = convert.env.data(weather.data, all.locations, breaks) #**# Could save this for faster re-use. How should I do that?
     #**# Watch for problem where location_year contains lower-case entries, while district has been converted to upper case for merging purposes.
   }else{
     #**# Watch input field names. These will need to be standardized, and the standardized names listed in the documentation
     # Otherwise, initialize an empty env.data with only the location_year, county, and year fields
-    in.counties = rep(all.counties, length(all.years))
-    in.years = sort(rep(all.years, length(all.counties)))
+    in.counties = rep(all.locations, length(all.years))
+    in.years = sort(rep(all.years, length(all.locations)))
     env.data = data.frame(location = in.counties, year = in.years, location_year = sprintf("%s_%s", in.counties, in.years))
   }
   
@@ -589,6 +589,7 @@ FormatDataForRF1 = function(human.data, mosq.data, weekinquestion, weather.data,
   }else{
     # Merge on county.year. Keep only records that have mosquito data
     my.data = merge(md.data, hd.data, by = "location_year", all.x = TRUE) #, all = TRUE
+    my.data = cleanup.garbage(my.data)
   }
   
   # Merge to environmental data.
@@ -604,7 +605,7 @@ FormatDataForRF1 = function(human.data, mosq.data, weekinquestion, weather.data,
   
   # Remove non-analysis variables #**# This needs an upgrade to allow a user input and user control!
   user.drop.vars = rf1.inputs[[5]]
-  drop.vars = c(user.drop.vars, "location_year", "GROUP", "CI.lower", "CI.upper", "COUNTY", "Cases", "YEAR", "year", "county", "district", "breaks", "location") #**# I have a names problem! Should really clean up the name usage!
+  drop.vars = c(user.drop.vars, "location_year", "GROUP", "CI.lower", "CI.upper", "Cases", "YEAR", "year", "breaks", "location") #**# I have a names problem! Should really clean up the name usage!
   
   for (drop.var in drop.vars){
     if (drop.var %in% independent.vars){
@@ -632,7 +633,7 @@ FormatDataForRF1 = function(human.data, mosq.data, weekinquestion, weather.data,
 #'
 #' @noRd
 #'
-convert.human.data = function(hd, all.counties, all.years){
+convert.human.data = function(hd, all.locations, all.years){
   #**# The steps creating the year were already done in forecast_NYCT.R and could be required as part of the input.
   hd$year = mapply(substr, hd$date, nchar(as.character(hd$date)) - 3, nchar(as.character(hd$date)))
   hd$year = as.numeric(hd$year)
@@ -646,14 +647,14 @@ convert.human.data = function(hd, all.counties, all.years){
   hd.data$location = sapply(hd.data$location_year, splitter, "_", 1, 1)
   hd.data$year =  sapply(hd.data$location_year, splitter, "_", 2, 0)
   
-  # Make sure there is a record for every year and county included in the data set
-  for (county in all.counties){
+  # Make sure there is a record for every year and location included in the data set
+  for (location in all.locations){
     for (year in all.years){
-      location_year = sprintf("%s_%s", county, year)
+      location_year = sprintf("%s_%s", location, year)
       if (!location_year %in% hd.data$location_year){
         # Add 0 cases for missing location_years
-        #test.type(c(county_year, 0, county, year), 'L1480')
-        hd.data = rbind(hd.data, c(location_year, 0, county, year))
+        #test.type(c(location_year, 0, location, year), 'L1480')
+        hd.data = rbind(hd.data, c(location_year, 0, location, year))
       }
     }
   }
@@ -693,7 +694,7 @@ assign.breaks = function(weekinquestion, break.type){
 #'
 #' @noRd
 #'
-convert.env.data = function(weather.data, all.counties, season.breaks){
+convert.env.data = function(weather.data, all.locations, season.breaks){
   
   # These are column names, but the dplyr syntax makes them flag up as undefined global variables
   # So I define them here to make R happy, even though these are not actually used anywhere in the following
@@ -701,7 +702,7 @@ convert.env.data = function(weather.data, all.counties, season.breaks){
   pr = rmean = tmaxc = tmeanc = tminc = vpd = wbreaks = NA
   
   #Save processing time by restricting to just locations of interest
-  weather.data = weather.data[weather.data$location %in% all.counties, ]
+  weather.data = weather.data[weather.data$location %in% all.locations, ]
   
   # Drop weather data beyond the last break
   last.break = season.breaks[length(season.breaks)]
@@ -745,7 +746,7 @@ convert.env.data = function(weather.data, all.counties, season.breaks){
   env.data$location = sapply(env.data$location_year, splitter, "_", 1, 1)
   env.data$year = sapply(env.data$location_year, splitter, "_", 2, 0)
   
-  env.data$location = toupper(env.data$location) #**# Is this going to break things badly?
+  #env.data$location = toupper(env.data$location) #**# Is this going to break things badly? YES, given the changes
   
   return(env.data)
 }
@@ -1563,14 +1564,14 @@ calculate.MLE.v2 = function(md, temporal.resolution = "annual"){
   
   # Create a new data frame with group ID information
   md.data = data.frame(GROUP = group.ids, CI.lower = NA, CI.upper = NA,
-                       IR = NA, COUNTY = NA)
+                       IR = NA, location = NA)
   
   # Loop through each group and calculate MLE
   for (i in 1:length(group.ids)){
     group.id = group.ids[i]
     # Subset to just this group.id
     group.data = md[md$location_year == group.id, ]
-    county = as.character(group.data$location[1]) # Should all be the same, just use first value
+    location = as.character(group.data$location[1]) # Should all be the same, just use first value
     this.year = group.data$year[1] # Should all be same, just use first value #**# Modify if temporal resolution is not annual
     
     # Get number of positive and negative pools for this group
@@ -1624,14 +1625,14 @@ calculate.MLE.v2 = function(md, temporal.resolution = "annual"){
     md.data$abundance[i] = abundance
     md.data$density[i] = density
     
-    # Update the COUNTY entry
-    md.data$COUNTY[i] = county
+    # Update the location entry
+    md.data$location[i] = location
     
     # Ensure there is a clearly delineated year field. Adjust as appropriate for other temporal resolutions
     if (temporal.resolution == "annual") { md.data$year[i] = this.year }
   } # END OF LOOP OVER GROUPS
   
-  md.data$location_year = sprintf("%s_%s", md.data$COUNTY, md.data$year)
+  md.data$location_year = sprintf("%s_%s", md.data$location, md.data$year)
   
   return(md.data)
 }
