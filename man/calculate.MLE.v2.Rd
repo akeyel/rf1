@@ -7,7 +7,7 @@
 calculate.MLE.v2(md, temporal.resolution = "annual")
 }
 \arguments{
-\item{md}{Data on mosquito pools tested for the disease. Must be formatted with 4 columns: district (the spatial unit, e.g. county), col_date: the date the mosquitoes were tested, wnv_result: whether or not the pool was positive, pool_size: the number of mosquitoes tested in the pool. A fifth column species is optional but is not used by the code}
+\item{md}{Data on mosquito pools tested for the disease. Must be formatted with 4 columns: location (the spatial unit, e.g. county), col_date: the date the mosquitoes were tested, wnv_result: whether or not the pool was positive, pool_size: the number of mosquitoes tested in the pool. A fifth column species is optional but is not used by the code}
 
 \item{temporal.resolution}{Must be set to 'annual' for now. Ideally support for finer-scale resolution will be added.}
 }

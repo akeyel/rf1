@@ -16,12 +16,12 @@ rf1(forecast.targets, human.data, mosq.data, weather.data, weekinquestion,
 provides options for mosquito predictions}
 
 \item{human.data}{Data on human cases of the disease. Must be formatted with
-two columns: district and date. The district column contains the spatial
+two columns: location and date. The location column contains the spatial
 unit (typically county), while the date corresponds to the date of the
 onset of symptoms for the human case.}
 
 \item{mosq.data}{Data on mosquito pools tested for the disease. Must be
-formatted with 4 columns: district (the spatial unit, e.g. county),
+formatted with 4 columns: location (the spatial unit, e.g. county),
 col_date: the date the mosquitoes were tested, wnv_result: whether or not
 the pool was positive, pool_size: the number of mosquitoes tested in the
 pool. A fifth column species is optional but is not used by the code}
@@ -42,7 +42,7 @@ MORE DETAILS}
 \item{results.path}{The base path in which to place the modeling results.
 Some models will create sub-folders for model specific results}
 
-\item{id.string}{An id to use for labeling the aggregations across all districts}
+\item{id.string}{An id to use for labeling the aggregations across all locations}
 
 \item{break.type}{The temporal frequency to use for the data. The default is
 'seasonal' which breaks the environmental data into January, February,

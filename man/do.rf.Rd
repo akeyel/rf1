@@ -50,7 +50,7 @@ standard randomForest package.}
 A list containing:\tabular{ll}{
 MODEL \tab the random forest prediction model\cr
 TEMPORAL.ACCURACY \tab  an accuracy assessment using leave one year out cross-validation\cr
-SPATIAL.ACCURACY \tab an accuracy assessment based on leave one district out cross-validation\cr
+SPATIAL.ACCURACY \tab an accuracy assessment based on leave one location out cross-validation\cr
 TEMPORAL.NULL \tab Null model results based on estimates across time\cr
 SPATIAL.NULL \tab Null model results based on estimates across space\cr
 RETAINED.VARS \tab Variables retained in the final prediction model\cr}

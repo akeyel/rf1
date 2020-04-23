@@ -38,11 +38,11 @@ NULL
 #' 'annual.human.cases' generates human case predictions, while 'seasonal.mosquito.MLE'
 #' provides options for mosquito predictions
 #' @param human.data Data on human cases of the disease. Must be formatted with
-#'   two columns: district and date. The district column contains the spatial
+#'   two columns: location and date. The location column contains the spatial
 #'   unit (typically county), while the date corresponds to the date of the
 #'   onset of symptoms for the human case.
 #' @param mosq.data Data on mosquito pools tested for the disease. Must be
-#'   formatted with 4 columns: district (the spatial unit, e.g. county),
+#'   formatted with 4 columns: location (the spatial unit, e.g. county),
 #'   col_date: the date the mosquitoes were tested, wnv_result: whether or not
 #'   the pool was positive, pool_size: the number of mosquitoes tested in the
 #'   pool. A fifth column species is optional but is not used by the code
@@ -58,7 +58,7 @@ NULL
 #'   MORE DETAILS
 #' @param results.path The base path in which to place the modeling results.
 #'   Some models will create sub-folders for model specific results
-#' @param id.string An id to use for labeling the aggregations across all districts
+#' @param id.string An id to use for labeling the aggregations across all locations
 #' @param break.type The temporal frequency to use for the data. The default is
 #'   'seasonal' which breaks the environmental data into January, February,
 #'   March; April, May, June; July, August, September; October, November,
@@ -103,11 +103,11 @@ rf1 = function(forecast.targets, human.data, mosq.data, weather.data,
   #stop("Need to fix stuff, maybe")
   
     
-  #**# How do I go from a MIR to positive district weeks? Isn't the MIR more useful?
-  # First question: Could estimate number of trap nights, number of mosquitoes sampled, and then use the infection rate to get an estimate of the number of positive district-weeks.
+  #**# How do I go from a MIR to positive location weeks? Isn't the MIR more useful?
+  # First question: Could estimate number of trap nights, number of mosquitoes sampled, and then use the infection rate to get an estimate of the number of positive location-weeks.
   # For second question - does seem like a lot of work to get at a number that tells us what? In ArboMAP it is used to estimate human cases, but we do that directly.
   #**# So for now, maybe the mosquito results aren't relevant? Or phrased better - are not relevant to the specific comparison question being asked.
-  annual.positive.district.weeks = NA
+  annual.positive.location.weeks = NA
 
   # Create output objects
   RF1.results = data.frame(forecast.target = NA, location = NA, value = NA)
@@ -355,7 +355,7 @@ NULL
 #' @return A list containing:\tabular{ll}{
 #' MODEL \tab the random forest prediction model\cr
 #' TEMPORAL.ACCURACY \tab  an accuracy assessment using leave one year out cross-validation\cr
-#' SPATIAL.ACCURACY \tab an accuracy assessment based on leave one district out cross-validation\cr
+#' SPATIAL.ACCURACY \tab an accuracy assessment based on leave one location out cross-validation\cr
 #' TEMPORAL.NULL \tab Null model results based on estimates across time\cr
 #' SPATIAL.NULL \tab Null model results based on estimates across space\cr
 #' RETAINED.VARS \tab Variables retained in the final prediction model\cr} 
@@ -495,7 +495,7 @@ do.rf = function(trap.data, dep.var, independent.vars, results.path, do.spatial 
   if (do.spatial == 1){
     ## Spatial validation step
     if (display.messages == 1){ message("Calculating spatial accuracy statistics") }
-    spatial.accuracy = systematic.validation(trap.data, dep.var, f3, best.m, spatial.field, response.type, display.messages) #**# formerly SPATIAL instead of district
+    spatial.accuracy = systematic.validation(trap.data, dep.var, f3, best.m, spatial.field, response.type, display.messages) #**# formerly SPATIAL instead of location
   }else{
     if (display.messages == 1){message("Skipping spatial accuracy assessment (may take > 17 hours for some analyses)")}
     spatial.accuracy = NA
@@ -544,8 +544,13 @@ FormatDataForRF1 = function(human.data, mosq.data, weekinquestion, weather.data,
   if (length(mosq.data) != 1){
     # Need to convert mosquito data into mosquito infection rates (uses MLE code, which is not mine. Need to wait for response from Moffit. Perhaps a phone call? If no email response.)
     temporal.resolution = "annual"
+
+    #Switch to a location_year naming convention & add year field from col_date field
+    mosq.data$year = mapply(substr, mosq.data$col_date, nchar(as.character(mosq.data$col_date)) - 3, nchar(as.character(mosq.data$col_date)))
+    mosq.data$year = as.numeric(mosq.data$year)
+    mosq.data = district.to.location(mosq.data, "mosq.data")
+    
     md.data = calculate.MLE.v2(mosq.data, temporal.resolution)
-    # Switch to a location_year naming convention
   }
   
   # Need to convert human data to cases per county per year, and add 0's for county years without cases
@@ -564,6 +569,7 @@ FormatDataForRF1 = function(human.data, mosq.data, weekinquestion, weather.data,
   # Need to aggregate the climate data by season & merge with static.data
   # Only process if weather.data is not NA
   if (length(weather.data) != 1){
+    weather.data = district.to.location(weather.data)
     env.data = convert.env.data(weather.data, all.counties, breaks) #**# Could save this for faster re-use. How should I do that?
     #**# Watch for problem where location_year contains lower-case entries, while district has been converted to upper case for merging purposes.
   }else{
@@ -630,8 +636,10 @@ convert.human.data = function(hd, all.counties, all.years){
   #**# The steps creating the year were already done in forecast_NYCT.R and could be required as part of the input.
   hd$year = mapply(substr, hd$date, nchar(as.character(hd$date)) - 3, nchar(as.character(hd$date)))
   hd$year = as.numeric(hd$year)
-  hd$district = as.character(hd$district)
-  hd$location_year = sprintf("%s_%s", hd$district, hd$year)
+  # Check if data sets are input with district and district_year instead of location and location_year
+  hd = district.to.location(hd)
+  hd$location = as.character(hd$location)
+  #hd$location_year = sprintf("%s_%s", hd$location, hd$year)
   hd$count = 1 # One case per entry
   hd.data = aggregate(hd$count, by = list(hd$location_year), "sum")
   colnames(hd.data) = c("location_year", "Cases")
@@ -692,8 +700,8 @@ convert.env.data = function(weather.data, all.counties, season.breaks){
   # code, as the entries below refer to column names in a data object
   pr = rmean = tmaxc = tmeanc = tminc = vpd = wbreaks = NA
   
-  #Save processing time by restricting to just districts of interest
-  weather.data = weather.data[weather.data$district %in% all.counties, ]
+  #Save processing time by restricting to just locations of interest
+  weather.data = weather.data[weather.data$location %in% all.counties, ]
   
   # Drop weather data beyond the last break
   last.break = season.breaks[length(season.breaks)]
@@ -701,7 +709,7 @@ convert.env.data = function(weather.data, all.counties, season.breaks){
   
   # Add grouping factor based on day of year
   weather.data$wbreaks = sapply(weather.data$doy, assign.groups, season.breaks)
-  weather.data$location_year = sprintf("%s_%s", weather.data$district, weather.data$year)
+  weather.data$location_year = sprintf("%s_%s", weather.data$location, weather.data$year)
   
   # This looks like a job for dplyr; https://datacarpentry.org/dc_zurich/R-ecology/04-dplyr
   #**# This is hard-coded to specific variables. Can dplyr take a more general input?
@@ -938,8 +946,8 @@ add.data = function(rs.data, this.file, this.merge, breaks){
     
     
     # Merge by spatial unit - no temporal resolution
-    #these.data$district = toupper(these.data$SPATIAL) # Ensure data is upper-case for proper join
-    #these.data$SPATIAL = NULL # Remove this field, otherwise it will later get converted to a SPATIAL.x if more than one gets merged. Can always re-assign from district if it is needed later
+    #these.data$location = toupper(these.data$SPATIAL) # Ensure data is upper-case for proper join
+    #these.data$SPATIAL = NULL # Remove this field, otherwise it will later get converted to a SPATIAL.x if more than one gets merged. Can always re-assign from location if it is needed later
     
     rs.data = merge(rs.data, these.data, by = "location")
   }
@@ -1463,7 +1471,7 @@ spatial.temporal.barplots = function(temporal.accuracy, spatial.accuracy, spatia
 #'
 #' Modified from wnv_hlpr.R
 #'
-#' @param md Data on mosquito pools tested for the disease. Must be formatted with 4 columns: district (the spatial unit, e.g. county), col_date: the date the mosquitoes were tested, wnv_result: whether or not the pool was positive, pool_size: the number of mosquitoes tested in the pool. A fifth column species is optional but is not used by the code
+#' @param md Data on mosquito pools tested for the disease. Must be formatted with 4 columns: location (the spatial unit, e.g. county), col_date: the date the mosquitoes were tested, wnv_result: whether or not the pool was positive, pool_size: the number of mosquitoes tested in the pool. A fifth column species is optional but is not used by the code
 #' @param temporal.resolution Must be set to 'annual' for now. Ideally support for finer-scale resolution will be added.
 #'
 #' @return Mosquito data compiled to give estimated mosquito infection rates by spatial unit and temporal resolution
@@ -1482,7 +1490,7 @@ calculate.MLE.v2 = function(md, temporal.resolution = "annual"){
   }
   
   # Check that expected column names are present, if not, give an informative error
-  expected.names = c('district', "col_date", "wnv_result", "pool_size") #'species' is not actually required at this point
+  expected.names = c('location', "col_date", "wnv_result", "pool_size") #'species' is not actually required at this point
   is.error = 0
   missing.vec = c()
   for (e.name in expected.names){
@@ -1548,10 +1556,10 @@ calculate.MLE.v2 = function(md, temporal.resolution = "annual"){
   md = md[!is.na(md$ABUND), ]
   
   # Aggregate by spatial field and year
-  md$district_year = sprintf("%s_%s", md$district, md$year)
+  md$location_year = sprintf("%s_%s", md$location, md$year)
   
   # Get group ID's
-  group.ids = unique(md$district_year)
+  group.ids = unique(md$location_year)
   
   # Create a new data frame with group ID information
   md.data = data.frame(GROUP = group.ids, CI.lower = NA, CI.upper = NA,
@@ -1561,8 +1569,8 @@ calculate.MLE.v2 = function(md, temporal.resolution = "annual"){
   for (i in 1:length(group.ids)){
     group.id = group.ids[i]
     # Subset to just this group.id
-    group.data = md[md$district_year == group.id, ]
-    county = as.character(group.data$district[1]) # Should all be the same, just use first value
+    group.data = md[md$location_year == group.id, ]
+    county = as.character(group.data$location[1]) # Should all be the same, just use first value
     this.year = group.data$year[1] # Should all be same, just use first value #**# Modify if temporal resolution is not annual
     
     # Get number of positive and negative pools for this group
@@ -1713,4 +1721,67 @@ splitter = function(string, delimiter, position, as.string = 0){
   if (as.string == 1){  out = as.character(out)  }
   
   return(out)
+}
+
+
+#' District to location
+#' 
+#' Could be generalized even
+#' Copy in dfmip as well
+#' 
+#' @noRd
+district.to.location = function(in.data, data.label, old.name = 'district', new.name = 'location'){
+  
+  fields = colnames(in.data)
+  new.name.regex = sprintf("\\b%s\\b", new.name)
+  old.name.regex = sprintf("\\b%s\\b", old.name)
+  new.pos = grep(new.name.regex, fields)
+  old.pos = grep(old.name.regex, fields)
+  
+  if (length(new.pos) == 0){
+    # If the old name is present and the new name is absent, rename the field
+    if (length(old.pos) == 1){
+      colnames(in.data)[old.pos] = new.name
+      warning(sprintf("%s field missing. Substituting values from %s field", new.name, old.name))
+    }
+    if (length(old.pos) == 0){
+      stop(sprintf("Required 'location' field is missing. Field names are %s", paste(fields, collapse = ', ')))
+    }
+    if (length(old.pos) > 1){
+      stop(sprintf("More than one field returned for %s. Probably an error with the regular expressions. Ideally just include a %s field", old.name, new.name))
+    }
+  }
+  
+  new.name_year = sprintf("%s_year", new.name)
+  new.name_year.regex = sprintf("\\b%s\\b", new.name_year)
+  new.name_year.pos = grep(new.name_year.regex, fields)
+  
+  if (length(new.name_year.pos) == 0){
+    # Search for variables associated with the old year
+    old.name_year = sprintf("%s_year", old.name)
+    old.name_year.regex = sprintf("\\b%s\\b", old.name_year)
+    old.name_year.pos = grep(old.name_year.regex, fields)
+
+    # This check must precede the next, otherwise the new.name_year field will exist!
+    if (length(old.name_year.pos) == 0){
+      # If the field is not there, generate the location_year field from the location and year fields
+      in.data[[new.name_year]] = sprintf("%s_%s", in.data[[new.name]], in.data[["year"]])
+      
+      # Check that this was successful
+      if (length(in.data[[new.name_year]]) == 0){
+        stop(sprintf("Something went wrong with generation of the %s_year field for data set %s", new.name, data.label))
+      }
+    }
+    
+    if (length(old.name_year.pos) == 1){
+      warning(sprintf("%s field missing. Subsituting values from %s field", new.name_year, old.name_year))
+      colnames(in.data)[old.name_year.pos] = new.name_year
+    }
+    
+    if (length(old.name_year.pos) > 1){
+      stop(sprintf("More than one field returned for %s. Probably an error with the regular expressions. Ideally just include a %s field", old.name_year, new.name_year))
+    }
+  }
+ 
+  return(in.data) 
 }

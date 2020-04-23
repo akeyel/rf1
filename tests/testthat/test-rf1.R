@@ -205,6 +205,30 @@ test_that("Assorted problems give useful information", {
 
 })
 
+# Test district.to.location function
+test_that("district.to.location function works", {
+  
+  test.data = rf1::weather.data
+  data.label = "weather.data"
+  
+  out = district.to.location(test.data, data.label, old.name = 'district', new.name = 'location')
+  expect_equal(paste(colnames(out), collapse = " "), "location doy year tminc tmeanc tmaxc pr rmean vpd date location_year")
+  
+  colnames(test.data)[1] = "location"
+  out = district.to.location(test.data, data.label, old.name = 'district', new.name = 'location')
+  expect_equal(paste(colnames(out), collapse = " "), "location doy year tminc tmeanc tmaxc pr rmean vpd date location_year")
+  
+  colnames(test.data)[1] = "notlocation"
+  expect_error(district.to.location(test.data, data.label, old.name = 'district', new.name = 'location'), 
+               "Required 'location' field is missing. Field names are notlocation, doy, year, tminc, tmeanc, tmaxc, pr, rmean, vpd, date")
+  
+  colnames(test.data)[1] = 'location'
+  test.data$district_year = sprintf("%s_%s", test.data$location, test.data$year)
+  expect_warning(district.to.location(test.data, data.label, old.name = 'district', new.name = 'location'),
+                 "location_year field missing. Subsituting values from district_year field")
+  
+})
+
 # # Test that RF1 model correctly handles districts with no human cases included in the analysis are handled properly.
 # test_that("Districts missing human cases are handled properly", {
 #   
