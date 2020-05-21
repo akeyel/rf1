@@ -203,7 +203,7 @@ rf1 = function(forecast.targets, human.data, mosq.data, weather.data,
     
     
     if (quantile.model == 1){
-      data.subset = forecast.data[ , kept.vars] #**# Will this line work?
+      data.subset = forecast.data[ , kept.vars]
       predictions = predict(human.model, data.subset, what = 0.5)
       dist.predictions = predict(human.model, data.subset, what = runif(n.draws))
     }else{
@@ -472,6 +472,15 @@ do.rf = function(trap.data, dep.var, independent.vars, results.path, do.spatial 
       #message(y[1:5])
       #message(paste(kept.vars, collapse = ', '))
       x.df = trap.data[ , kept.vars]
+      # if only one variable is left, R will drop the matrix formatting and make it a vector. SOOO annoying. But can only apply this step if kept.vars = 1, because otherwise R was corrupting the data inexplicably
+      if (length(kept.vars) == 1){
+        x.df = matrix(x.df, ncol = length(kept.vars)) 
+      }
+      message(length(y))
+      message(length(x.df[ ,1]))
+      message(length(kept.vars))
+      message(ncol(x.df))
+      
       #message(head(x.df))
       rf.model3 = quantregForest(x.df, y, na.action = na.exclude, stringsAsFactors = TRUE, importance = TRUE, mtry = best.m, ntree = 5000)
     }else{
@@ -489,6 +498,7 @@ do.rf = function(trap.data, dep.var, independent.vars, results.path, do.spatial 
     if (quantile.model == 1){
       y = trap.data[[dep.var]]
       x.df = trap.data[ , kept.vars]
+      x.df = matrix(x.df, ncol = length(kept.vars)) # if only one variable is left, R will drop the matrix formatting and make it a vector. SOOO annoying.
       rf.model3 = quantregForest(x.df, y, na.action = na.exclude, stringsAsFactors = TRUE, importance = TRUE, mtry = best.m, ntree = 5000)
     }else{
       rf.model3 = randomForest(f3, data = trap.data, na.action = na.exclude, stringsAsFactors = TRUE, importance = TRUE, mtry = best.m, ntree = 5000)
@@ -546,7 +556,7 @@ do.rf = function(trap.data, dep.var, independent.vars, results.path, do.spatial 
 #' @noRd
 #'
 FormatDataForRF1 = function(human.data, mosq.data, weekinquestion, weather.data, rf1.inputs, results.path, break.type){
-  
+
   # If it is NA or any other single entry, do not process the mosquito data
   if (length(mosq.data) != 1){
     # Need to convert mosquito data into mosquito infection rates (uses MLE code, which is not mine. Need to wait for response from Moffit. Perhaps a phone call? If no email response.)
@@ -561,8 +571,8 @@ FormatDataForRF1 = function(human.data, mosq.data, weekinquestion, weather.data,
   }
   
   # Need to convert human data to cases per county per year, and add 0's for county years without cases
-  all.locations = rf1.inputs[[3]] # Get list of counties
-  all.years = rf1.inputs[[4]] # Get list of all years of analysis
+  all.locations = as.character(rf1.inputs[[3]]) # Get list of counties
+  all.years = as.numeric(as.character(rf1.inputs[[4]])) # Get list of all years of analysis
   # Ensure human data is in data frame format, and not just a file name
   if (typeof(human.data) == "character"){  human.data = read.csv(human.data)  }
   
@@ -591,6 +601,13 @@ FormatDataForRF1 = function(human.data, mosq.data, weekinquestion, weather.data,
   
   env.data = add.rf1.inputs(env.data, rf1.inputs, breaks)
   #message(max(env.data$year))
+  
+  if (length(unique(env.data$location)) != length(all.locations)){
+    m1 = "Not all records were joined for all environmental variables."
+    m2 = sprintf("There should have been %s locations, but the environmental data only has %s unique locations",
+                 length(all.locations), length(unique(env.data$location)))
+    stop(sprintf("%s%s", m1, m2))
+  }
   
   if (length(mosq.data) == 1){  my.data = hd.data
   }else{
@@ -676,7 +693,7 @@ convert.human.data = function(hd, all.locations, all.years){
 #'
 #' @noRd
 #'
-assign.breaks = function(weekinquestion, break.type){
+assign.breaks.old = function(weekinquestion, break.type){
   # Get the date of the forecast. Only include breaks prior to forecast.doy
   forecast.year=  as.numeric(substr(as.character(weekinquestion), 1, 4))
   forecast.month = as.numeric(substr(as.character(weekinquestion), 6,7))
@@ -697,19 +714,122 @@ assign.breaks = function(weekinquestion, break.type){
   return(breaks)
 }
 
+#' Assign Breaks
+#'
+#' Identify break points according to day of year, and drop any that exceed
+#' the weekinquestion variable (if you want the entire year, select December 33)
+#' Does not correct for leap years, but these will be corrected for in later steps,
+#' such as in the convert.env.data function (correcting here made it difficult
+#' to correct appropriately in other parts of the code)
+#'
+#' @param weekinquestion The week to determine the last full break to include.
+#' Must be in YYYY-MM-DD format
+#' @param break.type The type of breaks to use. Options are seasonal or monthly
+#'
+#' @export
+assign.breaks = function(weekinquestion, break.type){
+  # Get the date of the forecast. Only include breaks prior to forecast.doy
+  #forecast.year=  as.numeric(substr(as.character(weekinquestion), 1, 4))
+  forecast.year = 2001 # Use a constant non-leap year
+  forecast.month = as.numeric(substr(as.character(weekinquestion), 6,7))
+  forecast.day = as.numeric(substr(as.character(weekinquestion), 9,10))
+  forecast.doy = get.DOY(2001, forecast.month, forecast.day) # Always assume not a leap-year. Leap years will be adjusted for in another step
+  
+  # Assign all breaks
+  if (break.type == "seasonal"){
+    # Breaks on 3/31, 6/30, 9/30, 12/31
+    breaks = c(get.DOY(forecast.year,3,31), get.DOY(forecast.year, 6, 30), get.DOY(forecast.year,9,30), get.DOY(forecast.year, 12, 31))
+  }
+  
+  if (break.type == 'monthly'){
+    Jan = 31 
+    Feb = 28
+    Mar = 31
+    Apr = 30
+    May = 31
+    Jun = 30
+    Jul = 31
+    Aug = 31
+    Sep = 30
+    Oct = 31
+    Nov = 30
+    Dec = 31
+    
+    months = c(Jan,Feb,Mar,Apr,May,Jun,Jul,Aug,Sep,Oct,Nov,Dec)
+
+    # Breaks on end of months
+    breaks = c()
+    cum.total = 0
+    for (month in months){
+      cum.total = cum.total + month
+      breaks = c(breaks, cum.total)
+    }
+  }
+  
+  if (break.type != "seasonal" & break.type != 'monthly'){ stop(sprintf("%s needs to be scripted out", break.type)) }
+  
+  # Drop any breaks that go past the forecast.doy - these cannot be used to make a prediction as they have not been observed yet!
+  breaks = breaks[breaks < forecast.doy] # Assume we have data up to the day before the forecast.doy #**# May not be a good assumption
+  
+  return(breaks)
+}
+
+
 #' Convert environmental data to the seasonal format used by the RF1 model
 #'
-#' @noRd
+#' @param weather.data Data on weather variables to be included in the analysis.
+#'   See the read.weather.data function for details about data format. The
+#'   read.weather.data function from ArboMAP is a useful way to process one or
+#'   more data files downloaded via Google Earth Engine.
+#' @param all.locations A list of counties included in the analysis (this
+#' is for ensuring that a county and year that does not have a human case is
+#' treated as a 0)
+#' @param season.breaks The break points to use for calculating summaries. These should be in the format of day of year.
+#' For example, c(31, 59) would create monthly summaries for January and February. the assign.breaks function
+#' can assist with generating the breakpoints automatically in the correct format.
+#' @param leap.correct 0: no leap year corrections will be made, all years will have the same day of year.
+#' Day 366 may be lost unless the last break is >366. 1: leap year corrections will be made for years with leap years
 #'
-convert.env.data = function(weather.data, all.locations, season.breaks){
+#'@export
+convert.env.data = function(weather.data, all.locations, season.breaks, leap.correct = 1){
   
+  #Save processing time by restricting to just locations of interest
+  weather.data = weather.data[weather.data$location %in% all.locations, ]
+  
+  if (nrow(weather.data) == 0){ stop("No location data returned. Does weather data have a location field? Does the all.locations variable use the same name convention?") }
+  
+  # Separate into leap years and non-leap years
+  weather.data$LEAP = sapply(weather.data$year, is.leap)
+  leap.data = weather.data[weather.data$LEAP == 1, ]
+  nonleap.data = weather.data[weather.data$LEAP == 0, ]
+
+  # If correcting, add 1 to all the break points for the leap years
+  leap.breaks = season.breaks
+  if (leap.correct == 1){ leap.breaks[leap.breaks >= 59] = season.breaks[season.breaks >= 59] + 1 }
+  
+  # Processed separately, but the leap correction is only applied if leap.correct is set to 1
+  leap.out = process.env.data(leap.data, leap.breaks)
+  nonleap.out = process.env.data(nonleap.data, season.breaks)
+  
+  # Rejoin the two data sets
+  env.data = rbind(leap.out, nonleap.out)
+  # Resort in order by year
+  env.data$location_year = as.character(env.data$location_year) # Somehow this was turning into a factor (!)
+  env.data = env.data[order(env.data$location_year), ]
+  
+  env.data$location = sapply(env.data$location_year, splitter, "_", 1, 1)
+  env.data$year = sapply(env.data$location_year, splitter, "_", 2, 0)
+  
+  #env.data$location = toupper(env.data$location) #**# Is this going to break things badly? YES, given the changes
+  
+  return(env.data)
+}
+
+process.env.data = function(weather.data, season.breaks){
   # These are column names, but the dplyr syntax makes them flag up as undefined global variables
   # So I define them here to make R happy, even though these are not actually used anywhere in the following
   # code, as the entries below refer to column names in a data object
   pr = rmean = tmaxc = tmeanc = tminc = vpd = wbreaks = NA
-  
-  #Save processing time by restricting to just locations of interest
-  weather.data = weather.data[weather.data$location %in% all.locations, ]
   
   # Drop weather data beyond the last break
   last.break = season.breaks[length(season.breaks)]
@@ -748,12 +868,6 @@ convert.env.data = function(weather.data, all.locations, season.breaks){
       }
     }
   }
-  
-  env.data$location_year = as.character(env.data$location_year) # Somehow this was turning into a factor (!)
-  env.data$location = sapply(env.data$location_year, splitter, "_", 1, 1)
-  env.data$year = sapply(env.data$location_year, splitter, "_", 2, 0)
-  
-  #env.data$location = toupper(env.data$location) #**# Is this going to break things badly? YES, given the changes
   
   return(env.data)
 }
@@ -1488,8 +1602,8 @@ spatial.temporal.barplots = function(temporal.accuracy, spatial.accuracy, spatia
 calculate.MLE.v2 = function(md, temporal.resolution = "annual"){
   
   # Remove any NA rows from the calculations, report their presence to the user
-  virus.nas = length(is.na(md$wnv_result))
-  pool.nas = length(is.na(md$pool_size))
+  virus.nas = sum(is.na(md$wnv_result))
+  pool.nas = sum(is.na(md$pool_size))
   md = md[!is.na(md$wnv_result), ]
   md = md[!is.na(md$pool_size), ]
   
@@ -1710,6 +1824,21 @@ get.days = function(year){
   return(days)
 }
 
+
+#' Function to identify is a leap year or not
+#' 
+#' Takes a year, returns a 1 if it is a leap year, based on the result of the get.days function
+#' 
+#' @param year The year to check if it is a leap-year or not
+#' 
+#' @return 1 for leap year, 0 for non-leap year
+#' 
+is.leap = function(year){
+  days = get.days(year)
+  leap = 0
+  if (days == 366){ leap = 1  }
+  return(leap)
+}
 
 #' Split strings using strsplit in a way that can easily be used within sapply
 #'

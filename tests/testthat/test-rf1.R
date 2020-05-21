@@ -11,7 +11,7 @@ test_that("rf1 core model runs successfully for mosquitoes", {
   set.seed(20200304)
   forecast.targets = c('seasonal.mosquito.MLE')
   weekinquestion = as.Date("2015-07-26", "%Y-%m-%d") #**# Is the as.Date part necessary?
-  analysis.counties = unique(rf1::human.data$district)
+  analysis.counties = unique(rf1::human.data$location)
   analysis.years = seq(2011, 2015)
   rf1.inputs = list(NA, NA, analysis.counties, analysis.years, NA, NA, NA)
   #week.id = sprintf("test:%s", weekinquestion)
@@ -41,9 +41,12 @@ test_that("rf1 core model runs successfully for mosquitoes", {
   
   # Test that mosquito.results came out as expected
   kept.vars = as.character(mosquito.results[[6]])
-  expect_equal(kept.vars, c('RMEAN_2', 'TMEANC_2', "TMINC_1", 'abundance', 'density'))
+  #expect_equal(kept.vars, c('RMEAN_2', 'TMEANC_2', "TMINC_1", 'abundance', 'density'))
   #expect_equal(kept.vars, c('RMEAN_2', 'TMEANC_2', 'PR_1')) #**# Unclear why this changed - could be a change in the randomization procedures leading to a different result.
   #**# And now it's changed back. Very Very odd.
+  #**# changed again - but we changed the underlying data in the quarterly summaries, so that could change variable relationships
+  # Did not change predictions, so clearly some of the minor variables are not contributing much.
+  expect_equal(kept.vars, c("RMEAN_2", "TMEANC_2", "VPD_2", "TMINC_1"))
   new.df = forecast.data[ ,kept.vars]
   predictions = predict(mosquito.results$MODEL, new.df) # Does 0.1, 0.5, 0.9 by default
   expect_equal(unname(predictions[1,1]), 0)
@@ -63,7 +66,7 @@ test_that("rf1 model runs successfully for humans", {
   set.seed(20200304)
   forecast.targets = c('annual.human.cases')
   weekinquestion = as.Date("2015-07-26", "%Y-%m-%d") #**# Is the as.Date part necessary?
-  analysis.counties = unique(rf1::human.data$district)
+  analysis.counties = unique(rf1::human.data$location)
   analysis.years = seq(2011, 2015)
   rf1.inputs = list(NA, NA, analysis.counties, analysis.years, NA, NA, NA)
   #week.id = sprintf("test:%s", weekinquestion)
@@ -92,8 +95,10 @@ test_that("rf1 model runs successfully for humans", {
   
   # Test that mosquito.results came out as expected
   kept.vars = as.character(human.results[[6]])
-  expect_equal(kept.vars, c('PR_1', 'RMEAN_2'))
+  #expect_equal(kept.vars, c('PR_1', 'RMEAN_2'))
+  expect_equal(kept.vars, c("PR_1")) # Does not change the test predictions, interesting enough.
   new.df = forecast.data[ ,kept.vars]
+  new.df = matrix(new.df, ncol = length(kept.vars))
   predictions = predict(human.results$MODEL, new.df) # Does 0.1, 0.5, 0.9 by default
   expect_equal(unname(predictions[1,1]), 1)
   expect_equal(round(unname(predictions[1,2]),0), 1)
@@ -113,7 +118,7 @@ test_that("rf1 model final results are correctly formatted for export to dfmip",
   set.seed(20200304)
   forecast.targets = c('annual.human.cases', 'seasonal.mosquito.MLE')
   weekinquestion = as.Date("2015-07-26", "%Y-%m-%d") #**# Is the as.Date part necessary?
-  analysis.counties = unique(rf1::human.data$district)
+  analysis.counties = unique(rf1::human.data$location)
   analysis.years = seq(2011, 2015)
   rf1.inputs = list(NA, NA, analysis.counties, analysis.years, NA, NA, NA)
   #week.id = sprintf("test:%s", weekinquestion)
@@ -178,7 +183,7 @@ test_that("Assorted problems give useful information", {
   set.seed(20200304)
   forecast.targets = c('seasonal.mosquito.MLE')
   weekinquestion = as.Date("2015-07-26", "%Y-%m-%d") #**# Is the as.Date part necessary?
-  analysis.counties = unique(rf1::human.data$district)
+  analysis.counties = unique(rf1::human.data$location)
   analysis.years = seq(2011, 2015)
   rf1.inputs = list(NA, NA, analysis.counties, analysis.years, NA, NA, NA)
   #week.id = sprintf("test:%s", weekinquestion)
@@ -210,6 +215,7 @@ test_that("Assorted problems give useful information", {
 test_that("district.to.location function works", {
   
   test.data = rf1::weather.data
+  colnames(test.data)[1] = 'district' # Change from location - data set has been updated to new name
   data.label = "weather.data"
   
   out = district.to.location(test.data, data.label, old.name = 'district', new.name = 'location')
@@ -227,6 +233,40 @@ test_that("district.to.location function works", {
   test.data$district_year = sprintf("%s_%s", test.data$location, test.data$year)
   expect_warning(district.to.location(test.data, data.label, old.name = 'district', new.name = 'location'),
                  "location_year field missing. Subsituting values from district_year field")
+  
+})
+
+test_that("convert.env.data function works properly", {
+
+  weather.data = rf1::weather.data
+  all.locations = unique(weather.data$location)
+  season.breaks = c(31,59, 90) # End of Jan, Feb, and March
+  env.data1 = convert.env.data(weather.data, all.locations, season.breaks, leap.correct = 1)
+  
+  #**# NEED TO DO MANUAL CALCULATIONS TO ENSURE THE CORRECT RESULTS ARE BEING PRODUCED.
+  # CURRENTLY, WE JUST CHECK THAT THEY ARE CONSISTENT AND THE CODE RUNS
+  expect_equal(nrow(env.data1), 20)
+  expect_equal(ncol(env.data1), 21)
+  # [1] is not a leap year, [2] is.
+  # Recall, these are simulated data with mean 0 and sd1 - so there is no actual weather here
+  expect_equal(round(env.data1$TMINC_1[1], 2), -0.01) 
+  expect_equal(round(env.data1$TMINC_1[2], 2), 0.17)
+  expect_equal(round(env.data1$TMINC_2[1], 2), 0.13)
+  expect_equal(round(env.data1$TMINC_2[2], 2), 0.10)
+  expect_equal(round(env.data1$TMINC_3[1], 2), -0.07) 
+  expect_equal(round(env.data1$TMINC_3[2], 2), -0.10)
+  
+  env.data2 = convert.env.data(weather.data, all.locations, season.breaks, leap.correct = 0)  
+  expect_equal(nrow(env.data2), 20)
+  expect_equal(ncol(env.data2), 21)
+  expect_equal(round(env.data2$TMINC_1[1], 2), -0.01) 
+  expect_equal(round(env.data2$TMINC_1[2], 2), 0.17) # Should not be different, as leap year should only affect breaks AFTER doy 59
+  expect_equal(round(env.data2$TMINC_2[1], 2), 0.13)
+  expect_equal(round(env.data2$TMINC_2[2], 2), 0.07) # Should be different
+  expect_equal(round(env.data2$TMINC_3[1], 2), -0.07)
+  expect_equal(round(env.data2$TMINC_3[2], 2), -0.06) # Should be different from above - leap year
+
+  #**# Would be good to manually check the math on the average function, but at least now the behavior is correct.
   
 })
 
