@@ -26,12 +26,12 @@ LazyData: true
 Depends: R(>= 2.10)
 Imports:
 	caret,
-	psych,
 	dplyr,
 	randomForest,
 	quantregForest,
     usethis
 Suggests:
+	psych,
     knitr,
     rmarkdown,
     testthat (>= 2.1.0)

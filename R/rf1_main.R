@@ -365,7 +365,7 @@ NULL
 do.rf = function(trap.data, dep.var, independent.vars, results.path, do.spatial = 0,
                  create.ci.null = 0, label = "", response.type = "continuous", exploratory = TRUE,
                  input.seed = 20180830, temporal.field = "year", spatial.field = "location",
-                 quantile.model = 1, display.messages = 1){
+                 quantile.model = 1, display.messages = 1, make.panel.plot = 1){
   
   #require(psych)
   
@@ -406,19 +406,21 @@ do.rf = function(trap.data, dep.var, independent.vars, results.path, do.spatial 
   
   ### EXAMINE PREDICTORS FOR COLLINEARITY
   # Run for Everything #**# Put someplace that makes more sense
-  correlation.path = sprintf("%s/ModelResults/correlations", results.path)
-  dir.create(correlation.path, showWarnings = FALSE, recursive = TRUE)
-  tiff(filename = sprintf("%s/pairspanel_%s.tif", correlation.path, label), height = 3000, width = 3000)
-  message(paste(independent.vars, collapse = ', '))
-  try.output = try(psych::pairs.panels(trap.data[ , independent.vars]))
-  if (length(try.output) > 0){
-    if (grep("Error", try.output) == 1){
-      m1 = "One or more independent variables is character and not numeric. Please correct this. "
-      m2 = "Independent variables are: "
-      stop(sprintf("%s%s%s. Actual error message was:\n %s", m1, m2, paste(independent.vars, collapse = ", "), try.output[1]))
+  if (make.panel.plot == 1){
+    correlation.path = sprintf("%s/ModelResults/correlations", results.path)
+    dir.create(correlation.path, showWarnings = FALSE, recursive = TRUE)
+    tiff(filename = sprintf("%s/pairspanel_%s.tif", correlation.path, label), height = 3000, width = 3000)
+    message(paste(independent.vars, collapse = ', '))
+    try.output = try(psych::pairs.panels(trap.data[ , independent.vars]))
+    if (length(try.output) > 0){
+      if (grep("Error", try.output) == 1){
+        m1 = "One or more independent variables is character and not numeric. Please correct this. "
+        m2 = "Independent variables are: "
+        stop(sprintf("%s%s%s. Actual error message was:\n %s", m1, m2, paste(independent.vars, collapse = ", "), try.output[1]))
+      }
     }
+    dev.off()
   }
-  dev.off()
   
   if (exploratory == TRUE){
     ### RUN MODEL FOR ALL PREDICTOR VARIABLES
