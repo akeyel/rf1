@@ -1,7 +1,7 @@
 Package: rf1
 Type: Package
 Title: Random Forest Workflow 1 for DFMIP
-Version: 0.1.0
+Version: 1.0.0
 Author: Alexander C Keyel <akeyel@albany.edu>
         MLE_IR.R from Williams & Moffitt 2005
 Maintainer: Alexander Keyel <akeyel@albany.edu>
